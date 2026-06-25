@@ -1,4 +1,5 @@
 import packageJson from "../package.json" with { type: "json" }
+import { parseRepositoryInput } from "./pullRequestViews.js"
 
 const help = `ghui ${packageJson.version}
 
@@ -6,12 +7,25 @@ Terminal UI for GitHub pull requests.
 
 Usage:
   ghui              Start the TUI
+  ghui --repo owner/name
+                    Start in a repository view
   ghui -v, --version
                     Print the installed version
   ghui -h, --help   Show this help message
 `
 
 const args = Bun.argv.slice(2)
+const repoFlag = args.indexOf("--repo")
+if (repoFlag >= 0) {
+	const value = args[repoFlag + 1]
+	const repository = value ? parseRepositoryInput(value) : null
+	if (!repository) {
+		console.error("Invalid --repo value. Expected owner/name.")
+		process.exit(1)
+	}
+	process.env.GHUI_REPOSITORY = repository
+	args.splice(repoFlag, 2)
+}
 const command = args[0]
 const commands = ["help", "version"]
 

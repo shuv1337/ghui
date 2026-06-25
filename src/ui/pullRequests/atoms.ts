@@ -20,7 +20,7 @@ import { activePullRequestViews, initialPullRequestView, type PullRequestView, v
 import { CacheService, type PullRequestCacheKey } from "../../services/CacheService.js"
 import { isCommandTimeoutError } from "../../services/CommandRunner.js"
 import { GitHubService, isGitHubRateLimitError } from "../../services/GitHubService.js"
-import { githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
+import { detectedRepository, githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
 import { effectiveFilterQueryAtom } from "../filter/atoms.js"
 import { initialRetryProgress, RetryProgress } from "../FooterHints.js"
 import { selectedIndexAtom } from "../listSelection/atoms.js"
@@ -65,7 +65,7 @@ const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => 
 
 // === View / queue state atoms ===
 export const retryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).pipe(Atom.keepAlive)
-export const activeViewAtom = Atom.make<PullRequestView>(initialPullRequestView(null)).pipe(Atom.keepAlive)
+export const activeViewAtom = Atom.make<PullRequestView>(initialPullRequestView(detectedRepository)).pipe(Atom.keepAlive)
 export const queueLoadCacheAtom = Atom.make<Partial<Record<string, PullRequestLoad>>>({}).pipe(Atom.keepAlive)
 export const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({}).pipe(Atom.keepAlive)
 

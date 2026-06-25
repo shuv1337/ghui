@@ -7,7 +7,7 @@ import type { IssueLoad } from "../../issueLoad.js"
 import { type IssueView, initialIssueView, issueViewCacheKey, issueViewMode, issueViewRepository, issueViewToQuery } from "../../issueViews.js"
 import { CacheService } from "../../services/CacheService.js"
 import { GitHubService } from "../../services/GitHubService.js"
-import { githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
+import { detectedRepository, githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
 import { selectedIssueIndexAtom } from "../listSelection/atoms.js"
 import { issueOverridesAtom } from "../pullRequests/atoms.js"
 
@@ -16,7 +16,7 @@ import { issueOverridesAtom } from "../pullRequests/atoms.js"
 // `src/issueViews.ts`.
 export { initialIssueView, issueViewMode, issueViewRepository, issueViewToQuery, type IssueView }
 
-export const activeIssueViewAtom = Atom.make<IssueView>(initialIssueView(null)).pipe(Atom.keepAlive)
+export const activeIssueViewAtom = Atom.make<IssueView>(initialIssueView(detectedRepository)).pipe(Atom.keepAlive)
 
 const emptyIssueLoad = (view: IssueView): IssueLoad => ({
 	view,
