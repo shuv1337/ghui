@@ -114,6 +114,13 @@ export const useDiffLineColors = ({
 	const diffRenderableRefs = useRef(new Map<number, DiffRenderable>())
 	const diffCommentLineColorsRef = useRef<AppliedDiffLineColorState>({ contextKey: null, entries: [] })
 	const diffLineColorRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	// `ensureDiffLineVisible` is a fresh closure each render (it captures
+	// the current `wideBodyHeight` etc. from useAppShell). The effect below
+	// excludes it from its dep array, so without this ref the effect would
+	// invoke a stale closure with the previous viewport height after a
+	// resize, scrolling the wrong amount.
+	const ensureDiffLineVisibleRef = useRef(ensureDiffLineVisible)
+	ensureDiffLineVisibleRef.current = ensureDiffLineVisible
 
 	useEffect(
 		() => () => {
@@ -166,7 +173,7 @@ export const useDiffLineColors = ({
 			if (suppressNextDiffCommentScrollRef.current) {
 				suppressNextDiffCommentScrollRef.current = false
 			} else {
-				ensureDiffLineVisible(selectedDiffCommentAnchor.renderLine)
+				ensureDiffLineVisibleRef.current(selectedDiffCommentAnchor.renderLine)
 			}
 		} else {
 			suppressNextDiffCommentScrollRef.current = false

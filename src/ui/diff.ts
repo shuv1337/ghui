@@ -363,8 +363,8 @@ export const stackedDiffFileIndexAtLine = (stackedFiles: readonly StackedDiffFil
 
 export const stackedDiffFileAtLine = (stackedFiles: readonly StackedDiffFilePatch[], line: number) => stackedFiles[stackedDiffFileIndexAtLine(stackedFiles, line)]
 
-export const diffStatText = (pullRequest: PullRequestItem) => {
-	if (!pullRequest.detailLoaded) return "loading details"
+export const diffStatText = (pullRequest: PullRequestItem, loadingIndicator: string) => {
+	if (!pullRequest.detailLoaded) return `${loadingIndicator} Loading details`
 	const files = pullRequest.changedFiles === 1 ? "1 file" : `${pullRequest.changedFiles} files`
 	const stats = diffFileStatsText(pullRequest)
 	return stats ? `${files} ${stats}` : files

@@ -27,6 +27,8 @@ const issueRowTitleWidth = (contentWidth: number, numberText: string, ageWidth: 
 
 const GROUP_ICON = "◆"
 
+export const issueActivityAgeText = (issue: IssueItem) => `${daysOpen(issue.updatedAt)}d`
+
 const IssueDetailLine = ({ children, width }: { children: ReactNode; width: number }) => <PaneInsetLine width={width}>{children}</PaneInsetLine>
 
 const issueGroups = (issues: readonly IssueItem[], showRepositoryGroups: boolean) => {
@@ -43,10 +45,12 @@ export const orderIssuesForDisplay = (issues: readonly IssueItem[], showReposito
 	return groupBy(issues, (issue) => issue.repository).flatMap(([, groupIssues]) => groupIssues)
 }
 
-export const issueListVisualLineCount = (issues: readonly IssueItem[], showRepositoryGroups: boolean) =>
-	issueGroups(issues, showRepositoryGroups).reduce((count, [repository, groupIssues]) => count + (repository ? 1 : 0) + groupIssues.length * 2, 0)
+export const issueListVisualLineCount = (issues: readonly IssueItem[], showRepositoryGroups: boolean, hasLoadMoreRow = false) => {
+	const issueLines = issueGroups(issues, showRepositoryGroups).reduce((count, [repository, groupIssues]) => count + (repository ? 1 : 0) + groupIssues.length * 2, 0)
+	return issueLines + (hasLoadMoreRow ? 1 : 0)
+}
 
-export const issueListRowIndex = (issues: readonly IssueItem[], selectedIndex: number, showRepositoryGroups: boolean) => {
+export const issueListRowIndex = (issues: readonly IssueItem[], selectedIndex: number, showRepositoryGroups: boolean, loadMoreSelected = false) => {
 	let line = 0
 	for (const [repository, groupIssues] of issueGroups(issues, showRepositoryGroups)) {
 		if (repository) line += 1
@@ -55,6 +59,7 @@ export const issueListRowIndex = (issues: readonly IssueItem[], selectedIndex: n
 			line += 2
 		}
 	}
+	if (loadMoreSelected) return line
 	return null
 }
 
@@ -69,6 +74,12 @@ export const IssueList = ({
 	showFilterBar = false,
 	isFilterEditing = false,
 	onSelectIssue,
+	hasMore = false,
+	isLoadingMore = false,
+	loadedCount = 0,
+	loadingIndicator = "-",
+	loadMoreSelected = false,
+	onSelectLoadMore,
 }: {
 	issues: readonly IssueItem[]
 	selectedIndex: number
@@ -80,9 +91,15 @@ export const IssueList = ({
 	showFilterBar?: boolean
 	isFilterEditing?: boolean
 	onSelectIssue: (index: number) => void
+	hasMore?: boolean
+	isLoadingMore?: boolean
+	loadedCount?: number
+	loadingIndicator?: string
+	loadMoreSelected?: boolean
+	onSelectLoadMore?: () => void
 }) => {
 	const { isHovered, onHoverChange } = useHoverState<number>()
-	const ageWidth = Math.max(4, ...issues.map((issue) => `${daysOpen(issue.createdAt)}d`.length + 1))
+	const ageWidth = Math.max(4, ...issues.map((issue) => issueActivityAgeText(issue).length + 1))
 	const groups = issueGroups(issues, repository === null)
 
 	return (
@@ -117,7 +134,7 @@ export const IssueList = ({
 				for (const { issue, index } of groupIssues) {
 					const selected = index === selectedIndex
 					const closed = issue.state === "closed"
-					const ageText = `${daysOpen(issue.createdAt)}d`
+					const ageText = issueActivityAgeText(issue)
 					const numberText = `#${issue.number}`
 					const titleWidth = issueRowTitleWidth(contentWidth, numberText, ageWidth)
 					const iconFg = selected ? colors.accent : colors.muted
@@ -155,6 +172,15 @@ export const IssueList = ({
 				}
 				return rows
 			})}
+			{status === "ready" && issues.length > 0 && (hasMore || isLoadingMore) ? (
+				<SelectableRow key="load-more" width={contentWidth} selected={loadMoreSelected} hovered={false} onSelect={() => onSelectLoadMore?.()} onHoverChange={() => {}}>
+					{(rowBg) => (
+						<TextLine width={contentWidth} fg={colors.muted} bg={rowBg}>
+							<span>{isLoadingMore ? `${loadingIndicator} Loading more issues... (${loadedCount} loaded)` : `↓ Press enter to load more  ·  ${loadedCount} loaded`}</span>
+						</TextLine>
+					)}
+				</SelectableRow>
+			) : null}
 		</box>
 	)
 }

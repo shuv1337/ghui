@@ -17,18 +17,25 @@ export const useScrollPersistence = (scrollRef: MutableRefObject<ScrollBoxRender
 		if (!scroll) return
 		let cancelled = false
 		let attempts = 0
+		let pendingTimeout: ReturnType<typeof globalThis.setTimeout> | null = null
 		const apply = () => {
+			pendingTimeout = null
 			if (cancelled) return
 			if (scroll.viewport.height <= 0) {
-				if (attempts++ < 20) globalThis.setTimeout(apply, 16)
+				if (attempts++ < 20) pendingTimeout = globalThis.setTimeout(apply, 16)
 				return
 			}
 			const target = persisted.current
 			if (target > 0 && target !== scroll.scrollTop) scroll.scrollTo({ x: 0, y: target })
 		}
 		apply()
+		// Track + clear the pending setTimeout: rapid `active` flips
+		// (modal open/close, surface switch) used to pile up `apply` calls
+		// that would land on a re-purposed scrollbox, sometimes writing
+		// `scrollTo` to the wrong element.
 		return () => {
 			cancelled = true
+			if (pendingTimeout !== null) globalThis.clearTimeout(pendingTimeout)
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [active])

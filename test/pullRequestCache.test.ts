@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequestItem } from "../src/domain.ts"
-import { mergeCachedDetails } from "../src/pullRequestCache.ts"
+import { freshPullRequestLoad, mergeCachedDetails, mergePullRequestDetail } from "../src/pullRequestCache.ts"
 
 const pullRequest = (overrides: Partial<PullRequestItem> = {}): PullRequestItem => ({
 	repository: "owner/repo",
@@ -31,6 +31,27 @@ const pullRequest = (overrides: Partial<PullRequestItem> = {}): PullRequestItem 
 })
 
 describe("mergeCachedDetails", () => {
+	test("hydrates detail fields without replacing authoritative summary metadata", () => {
+		const summary = pullRequest({ title: "Current title", updatedAt: new Date("2026-01-01T00:00:00Z"), reviewStatus: "approved" })
+		const detail = pullRequest({
+			title: "Fallback detail title",
+			body: "Hydrated body",
+			updatedAt: new Date("2026-06-01T00:00:00Z"),
+			reviewStatus: "none",
+			additions: 12,
+			detailLoaded: true,
+		})
+
+		const merged = mergePullRequestDetail(summary, detail)
+
+		expect(merged.title).toBe("Current title")
+		expect(merged.updatedAt).toEqual(new Date("2026-01-01T00:00:00Z"))
+		expect(merged.reviewStatus).toBe("approved")
+		expect(merged.body).toBe("Hydrated body")
+		expect(merged.additions).toBe(12)
+		expect(merged.detailLoaded).toBe(true)
+	})
+
 	test("preserves cached checks because the summary fragment never carries a real rollup", () => {
 		// The list query omits `statusCheckRollup` for cost; a fresh "summary" PR
 		// always lands with checkStatus = "none". Merging the cached detail's
@@ -101,5 +122,15 @@ describe("mergeCachedDetails", () => {
 			body: "",
 			detailLoaded: false,
 		})
+	})
+})
+
+describe("freshPullRequestLoad", () => {
+	test("accepts an authoritative empty refresh over cached rows", () => {
+		const view = { _tag: "Repository", repository: "owner/repo" } as const
+		const previous = { view, data: [pullRequest()], fetchedAt: new Date(), endCursor: "cursor", hasNextPage: false }
+		const next = freshPullRequestLoad(view, { items: [], endCursor: null, hasNextPage: false }, previous, 500)
+
+		expect(next.data).toEqual([])
 	})
 })

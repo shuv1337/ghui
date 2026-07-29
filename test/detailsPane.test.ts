@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { PullRequestComment, PullRequestItem } from "../src/domain.ts"
 import { bodyPreview, getDetailHeaderHeight, getDetailJunctionRows, getScrollableDetailBodyHeight, truncateConversationPath } from "../src/ui/DetailsPane.tsx"
+import { diffStatText } from "../src/ui/diff.ts"
 
 const pullRequest = (body: string): PullRequestItem => ({
 	repository: "owner/repo",
@@ -27,6 +28,12 @@ const pullRequest = (body: string): PullRequestItem => ({
 	updatedAt: new Date("2026-01-01T00:00:00Z"),
 	closedAt: null,
 	url: "https://github.com/owner/repo/pull/1",
+})
+
+describe("diffStatText", () => {
+	test("uses the active spinner frame while details load", () => {
+		expect(diffStatText({ ...pullRequest(""), detailLoaded: false }, "⠹")).toBe("⠹ Loading details")
+	})
 })
 
 describe("truncateConversationPath", () => {

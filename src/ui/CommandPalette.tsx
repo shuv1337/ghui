@@ -12,6 +12,7 @@ const scopeLabels = {
 	"Pull request": "Pull Request",
 	Issue: "Issue",
 	Diff: "Diff",
+	Runs: "Runs",
 	Comments: "Comments",
 	Labels: "Labels",
 	Navigation: "Navigation",

@@ -1,25 +1,25 @@
 import { Effect } from "effect"
 import * as Atom from "effect/unstable/reactivity/Atom"
+import { errorMessage } from "../errors.js"
 import { BrowserOpener } from "../services/BrowserOpener.js"
 import { Clipboard } from "../services/Clipboard.js"
+import { EditorOpener } from "../services/EditorOpener.js"
 import { GitHubService } from "../services/GitHubService.js"
 import { saveStoredDiffWhitespaceMode } from "../themeStore.js"
-import { commentsViewActiveAtom } from "../ui/comments/atoms.js"
+import { commentsViewActiveAtom, selectedCommentKeyAtom } from "../ui/comments/atoms.js"
 import { detailFullViewAtom, detailScrollOffsetAtom } from "../ui/detail/atoms.js"
 import { diffCommentRangeStartIndexAtom, diffFullViewAtom, diffRenderViewAtom, diffWhitespaceModeAtom, diffWrapModeAtom } from "../ui/diff/atoms.js"
+import { pullRequestRunsFor, runDetailSelectionAtom, runsFullViewAtom, runsKey, runsListSelectionAtom, selectedRunIdAtom } from "../ui/runs/atoms.js"
 import { filterDraftAtom, filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
 import { selectedIssueAtom } from "../ui/issues/atoms.js"
-import { selectedIssueIndexAtom } from "../ui/listSelection/atoms.js"
-import { activeIssueViewAtom } from "../ui/issues/atoms.js"
 import { activeModalAtom } from "../ui/modals/atoms.js"
 import { submitReviewOptions } from "../ui/modals/shared.js"
 import { initialCommandPaletteState, initialCommentModalState, initialOpenRepositoryModalState, Modal } from "../ui/modals/types.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { pullRequestQueueModes } from "../domain.js"
-import { activeViewAtom, labelCacheAtom, selectedPullRequestAtom, selectedRepositoryAtom } from "../ui/pullRequests/atoms.js"
-import { issueViewForPullRequestView } from "../viewSync.js"
-import { workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
+import { labelCacheAtom, selectedPullRequestAtom } from "../ui/pullRequests/atoms.js"
+import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceLabels, workspaceSurfaces } from "../workspaceSurfaces.js"
 import {
 	changedFilesReasonAtom,
@@ -37,6 +37,8 @@ import {
 	filterClearDisabledReasonAtom,
 	filterTitleAtom,
 	issueSelectedReasonAtom,
+	issueSurfaceReasonAtom,
+	noOpenIssueReasonAtom,
 	loadMoreDisabledReasonAtom,
 	loadMoreSubtitleAtom,
 	noOpenPullRequestReasonAtom,
@@ -59,6 +61,7 @@ import {
 	repositoryViewAvailableAtom,
 	repositoryViewSubtitleAtom,
 	repositoryViewTitleAtom,
+	runsCloseDisabledReasonAtom,
 	workspaceSurfaceAlreadyActiveReasonAtom,
 	workspaceSurfaceSubtitleAtom,
 } from "./derivations.js"
@@ -112,7 +115,6 @@ function switchWorkspaceSurfaceEffect(surface: WorkspaceSurface) {
 		const current = yield* Atom.get(workspaceSurfaceAtom)
 		if (current === surface) return
 		yield* Atom.set(workspaceSurfaceAtom, surface)
-		yield* Atom.set(selectedIssueIndexAtom, 0)
 		yield* Atom.set(detailFullViewAtom, false)
 		yield* Atom.set(diffFullViewAtom, false)
 		yield* Atom.set(commentsViewActiveAtom, false)
@@ -121,17 +123,12 @@ function switchWorkspaceSurfaceEffect(surface: WorkspaceSurface) {
 		const query = yield* Atom.get(filterQueryAtom)
 		yield* Atom.set(filterDraftAtom, query)
 		yield* Atom.set(noticeAtom, null)
-		// Sync the issue view's scope to the PR view's — otherwise pressing
-		// the Issues tab from within a repo can surface a stale repo's issues.
-		const pullRequestView = yield* Atom.get(activeViewAtom)
-		yield* Atom.set(activeIssueViewAtom, issueViewForPullRequestView(pullRequestView))
 	})
 }
 
 const flashErrorEffect = (error: unknown) =>
 	Effect.gen(function* () {
-		const message = error instanceof Error ? error.message : String(error)
-		yield* Atom.set(noticeAtom, message)
+		yield* Atom.set(noticeAtom, errorMessage(error))
 	})
 
 export const globalCommands: readonly CommandDefinition[] = [
@@ -256,6 +253,53 @@ export const globalCommands: readonly CommandDefinition[] = [
 			yield* Atom.set(diffCommentRangeStartIndexAtom, null)
 		}),
 	}),
+
+	// === Runs cluster (per-PR workflow runs view) ===
+	defineCommand({
+		id: "runs.open",
+		title: "Open workflow runs",
+		scope: "Runs",
+		subtitle: selectedPullRequestLabelAtom,
+		shortcut: "a",
+		keywords: ["actions", "ci", "workflow", "checks", "runs", "jobs"],
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pr = yield* Atom.get(selectedPullRequestAtom)
+			if (!pr) return
+			yield* Atom.set(selectedRunIdAtom, null)
+			yield* Atom.set(runsListSelectionAtom, 0)
+			yield* Atom.set(runDetailSelectionAtom, 0)
+			yield* Atom.set(diffFullViewAtom, false)
+			yield* Atom.set(detailFullViewAtom, false)
+			yield* Atom.set(commentsViewActiveAtom, false)
+			yield* Atom.set(runsFullViewAtom, true)
+		}),
+	}),
+	defineCommand({
+		id: "runs.close",
+		title: "Close workflow runs",
+		scope: "Runs",
+		subtitle: "Return to the pull request",
+		shortcut: "esc",
+		disabledReason: runsCloseDisabledReasonAtom,
+		run: Effect.gen(function* () {
+			yield* Atom.set(runsFullViewAtom, false)
+			yield* Atom.set(selectedRunIdAtom, null)
+		}),
+	}),
+	defineCommand({
+		id: "runs.refresh",
+		title: "Refresh workflow runs",
+		scope: "Runs",
+		subtitle: selectedPullRequestLabelAtom,
+		shortcut: "r",
+		disabledReason: runsCloseDisabledReasonAtom,
+		run: Effect.gen(function* () {
+			const pr = yield* Atom.get(selectedPullRequestAtom)
+			if (!pr) return
+			yield* Atom.refresh(pullRequestRunsFor(runsKey(pr)))
+		}),
+	}),
 	// === Modal openers (selection-seeded) ===
 	defineCommand({
 		id: "repository.open",
@@ -299,10 +343,10 @@ export const globalCommands: readonly CommandDefinition[] = [
 		subtitle: selectedIssueLabelAtom,
 		shortcut: "x",
 		keywords: ["close", "resolve"],
-		disabledReason: issueSelectedReasonAtom,
+		disabledReason: noOpenIssueReasonAtom,
 		run: Effect.gen(function* () {
 			const issue = yield* Atom.get(selectedIssueAtom)
-			if (!issue) return
+			if (!issue || issue.state !== "open") return
 			yield* Atom.set(
 				activeModalAtom,
 				Modal.Close({
@@ -386,8 +430,16 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: noSelectedItemReasonAtom,
 		run: Effect.gen(function* () {
 			const subject = yield* Atom.get(selectedCommentSubjectAtom)
-			if (!subject) return
-			yield* Atom.set(activeModalAtom, Modal.Comment({ ...initialCommentModalState, target: { kind: "issue" } }))
+			const key = yield* Atom.get(selectedCommentKeyAtom)
+			if (!subject || !key) return
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.Comment({
+					...initialCommentModalState,
+					target: { kind: "issue", subject: { repository: subject.repository, number: subject.number, key, issueUrl: surface === "issues" ? subject.url : null } },
+				}),
+			)
 		}),
 	}),
 	defineCommand({
@@ -401,13 +453,15 @@ export const globalCommands: readonly CommandDefinition[] = [
 			const subject = yield* Atom.get(selectedCommentSubjectAtom)
 			if (!subject) return
 			const repository = subject.repository
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			const target = { kind: surface === "issues" ? ("issue" as const) : ("pullRequest" as const), repository, number: subject.number, url: subject.url, labels: subject.labels }
 			const cache = yield* Atom.get(labelCacheAtom)
 			const cached = cache[repository]
 			if (cached) {
-				yield* Atom.set(activeModalAtom, Modal.Label({ repository, query: "", selectedIndex: 0, availableLabels: cached, loading: false }))
+				yield* Atom.set(activeModalAtom, Modal.Label({ repository, target, query: "", selectedIndex: 0, availableLabels: cached, loading: false }))
 				return
 			}
-			yield* Atom.set(activeModalAtom, Modal.Label({ repository, query: "", selectedIndex: 0, availableLabels: [], loading: true }))
+			yield* Atom.set(activeModalAtom, Modal.Label({ repository, target, query: "", selectedIndex: 0, availableLabels: [], loading: true }))
 			yield* GitHubService.use((github) => github.listRepoLabels(repository)).pipe(
 				Effect.flatMap((labels) =>
 					Effect.gen(function* () {
@@ -446,6 +500,20 @@ export const globalCommands: readonly CommandDefinition[] = [
 		}),
 	}),
 	defineCommand({
+		id: "pull.open-editor",
+		title: "Open pull request in editor",
+		scope: "Pull request",
+		subtitle: selectedPullRequestLabelAtom,
+		shortcut: "e",
+		keywords: ["nvim", "neovim", "editor", "vscode", "code", "diffview", "review", "checkout"],
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pr = yield* Atom.get(selectedPullRequestAtom)
+			if (!pr) return
+			yield* EditorOpener.use((opener) => opener.openPullRequest(pr)).pipe(Effect.catch(flashErrorEffect))
+		}),
+	}),
+	defineCommand({
 		id: "pull.copy-metadata",
 		title: "Copy pull request metadata",
 		scope: "Pull request",
@@ -481,6 +549,20 @@ export const globalCommands: readonly CommandDefinition[] = [
 			)
 		}),
 	}),
+	defineCommand({
+		id: "issue.open-browser",
+		title: "Open issue in browser",
+		scope: "Issue",
+		subtitle: selectedIssueLabelAtom,
+		shortcut: "o",
+		keywords: ["github", "web"],
+		disabledReason: issueSelectedReasonAtom,
+		run: Effect.gen(function* () {
+			const issue = yield* Atom.get(selectedIssueAtom)
+			if (!issue) return
+			yield* BrowserOpener.use((opener) => opener.openUrl(issue.url)).pipe(Effect.catch(flashErrorEffect))
+		}),
+	}),
 
 	// === Pull-request lifecycle (hook-bound via handoff) ===
 	defineCommand({
@@ -492,6 +574,16 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: pullRequestSurfaceReasonAtom,
 		keywords: ["reload", "sync"],
 		run: Effect.sync(() => invokeHandoff("refreshPullRequests")),
+	}),
+	defineCommand({
+		id: "issue.refresh",
+		title: "Refresh issues",
+		scope: "Global",
+		subtitle: "Fetch the latest issue queue from GitHub",
+		shortcut: "r",
+		disabledReason: issueSurfaceReasonAtom,
+		keywords: ["reload", "sync"],
+		run: Effect.sync(() => invokeHandoff("refreshIssues")),
 	}),
 	defineCommand({
 		id: "pull.load-more",
@@ -579,6 +671,14 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: changedFilesReasonAtom,
 		keywords: ["files", "navigator", "search"],
 		run: Effect.sync(() => invokeHandoff("openChangedFilesModal")),
+	}),
+	defineCommand({
+		id: "diff.toggle-file-panel",
+		title: "Toggle file panel",
+		scope: "Diff",
+		shortcut: "shift+f",
+		keywords: ["files", "panel", "sidebar", "toggle"],
+		run: Effect.sync(() => invokeHandoff("toggleDiffFilePanel")),
 	}),
 	defineCommand({
 		id: "diff.next-file",

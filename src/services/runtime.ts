@@ -7,6 +7,7 @@ import { parseRepositoryInput } from "../pullRequestViews.js"
 import { BrowserOpener } from "./BrowserOpener.js"
 import { CacheService } from "./CacheService.js"
 import { Clipboard } from "./Clipboard.js"
+import { EditorOpener } from "./EditorOpener.js"
 import { CommandRunner } from "./CommandRunner.js"
 import { GitHubService } from "./GitHubService.js"
 
@@ -56,8 +57,10 @@ const githubServiceLayer =
 
 const cacheServiceLayer = mockPrCount !== null ? CacheService.disabledLayer : CacheService.layerFromPath(config.cachePath)
 
+const editorOpenerLayer = mockPrCount !== null ? EditorOpener.mockLayer : EditorOpener.layerNoDeps
+
 export const githubRuntime = Atom.runtime(
-	Layer.mergeAll(githubServiceLayer, cacheServiceLayer, Clipboard.layerNoDeps, BrowserOpener.layerNoDeps).pipe(
+	Layer.mergeAll(githubServiceLayer, cacheServiceLayer, Clipboard.layerNoDeps, BrowserOpener.layerNoDeps, editorOpenerLayer).pipe(
 		Layer.provide(CommandRunner.layer),
 		Layer.provideMerge(Observability.layer),
 	),

@@ -1,17 +1,19 @@
-import { RegistryContext, useAtomSet } from "@effect/atom-react"
-import { type MutableRefObject, useContext, useState } from "react"
+import { useAtom, useAtomSet } from "@effect/atom-react"
+import type { MutableRefObject } from "react"
 import { config } from "../../config.js"
-import { errorMessage } from "../../errors.js"
+import { useItemLoadMore } from "../../hooks/useItemLoadMore.js"
+import { itemQueueCacheViewer } from "../../item/queue.js"
 import type { PullRequestLoad } from "../../pullRequestLoad.js"
 import { type PullRequestView, viewToListInput } from "../../pullRequestViews.js"
 import { pullRequestPageSize } from "../../services/runtime.js"
-import { cacheViewerFor, listOpenPullRequestPageAtom, nextLoadAfterPage, queueLoadCacheAtom, writeQueueCacheAtom } from "./atoms.js"
+import { listOpenPullRequestPageAtom, loadingMoreKeyAtom, nextLoadAfterPage, writeQueueCacheAtom } from "./atoms.js"
 
 export interface UseLoadMoreInput {
 	readonly activeView: PullRequestView
 	readonly currentQueueCacheKey: string
 	readonly pullRequestLoad: PullRequestLoad | null
 	readonly hasMorePullRequests: boolean
+	readonly pullRequestFetchInFlight: boolean
 	readonly username: string | null
 	readonly refreshGenerationRef: MutableRefObject<number>
 	readonly flashNotice: (message: string) => void
@@ -30,66 +32,44 @@ export interface UseLoadMoreResult {
 }
 
 /**
- * Owns the load-more pagination state machine: gates, generation guard,
- * cache append, optimistic-write to in-memory cache, and SQLite persistence.
- *
- * Generation guard via the shared `refreshGenerationRef`: if a refresh or
- * view switch happens mid-flight, the response is silently dropped. The
- * `.finally` clears the loading flag iff this fetch is still the one we
- * care about (`current === cacheKey`).
+ * Typed Pull Request adapter for the shared Item load-more state machine.
+ * Pull Request query construction, detail-preserving merge, and persistence
+ * remain local to this Surface.
  */
 export const useLoadMore = ({
 	activeView,
 	currentQueueCacheKey,
 	pullRequestLoad,
 	hasMorePullRequests,
+	pullRequestFetchInFlight,
 	username,
 	refreshGenerationRef,
 	flashNotice,
 	setQueueLoadCache,
 }: UseLoadMoreInput): UseLoadMoreResult => {
-	const registry = useContext(RegistryContext)
 	const loadPullRequestPage = useAtomSet(listOpenPullRequestPageAtom, { mode: "promise" })
 	const writeQueueCache = useAtomSet(writeQueueCacheAtom, { mode: "promise" })
-	// Component-local loading flag: a keepAlive atom would retain the
-	// "in flight" key across hot reloads even though the original Promise
-	// was abandoned mid-flight, leaving the spinner stuck. The atom shadow
-	// in atoms.ts (`loadingMoreKeyAtom` / `isLoadingMorePullRequestsAtom`)
-	// is still exported so commands can read the flag once dispatch is
-	// wired through there — we just don't depend on it here.
-	const [loadingMoreKey, setLoadingMoreKey] = useState<string | null>(null)
-	const isLoadingMorePullRequests = loadingMoreKey === currentQueueCacheKey
+	const [loadingMoreKey, setLoadingMoreKey] = useAtom(loadingMoreKeyAtom)
+	const { loadMore, isLoadingMore, resetLoadingMore } = useItemLoadMore({
+		cacheKey: currentQueueCacheKey,
+		load: pullRequestLoad,
+		hasMore: hasMorePullRequests,
+		fetchInFlight: pullRequestFetchInFlight,
+		itemLimit: config.prFetchLimit,
+		pageSize: pullRequestPageSize,
+		refreshGenerationRef,
+		loadingMoreKey,
+		setLoadingMoreKey,
+		fetchPage: (cursor, pageSize) => loadPullRequestPage(viewToListInput(activeView, cursor, pageSize)),
+		mergePage: (current, page) => nextLoadAfterPage(current, page, config.prFetchLimit),
+		setLoadCache: setQueueLoadCache,
+		persistLoad: (load) => {
+			const viewer = itemQueueCacheViewer(activeView, username)
+			if (viewer) return writeQueueCache({ viewer, load })
+		},
+		flashNotice,
+		timeoutMessage: "Load more timed out after 15s",
+	})
 
-	const loadMorePullRequests = (): boolean => {
-		if (!pullRequestLoad || !hasMorePullRequests || isLoadingMorePullRequests || !pullRequestLoad.endCursor) return false
-		const remaining = config.prFetchLimit - pullRequestLoad.data.length
-		if (remaining <= 0) return false
-		const cacheKey = currentQueueCacheKey
-		const generation = refreshGenerationRef.current
-		setLoadingMoreKey(cacheKey)
-		void loadPullRequestPage(viewToListInput(activeView, pullRequestLoad.endCursor, Math.min(pullRequestPageSize, remaining)))
-			.then((page) => {
-				if (generation !== refreshGenerationRef.current) return
-				const currentLoad = registry.get(queueLoadCacheAtom)[cacheKey]
-				if (!currentLoad) return
-				const persistedLoad = nextLoadAfterPage(currentLoad, page, config.prFetchLimit)
-				setQueueLoadCache((current) => {
-					if (!current[cacheKey]) return current
-					return { ...current, [cacheKey]: persistedLoad }
-				})
-				const viewer = cacheViewerFor(activeView, username)
-				if (viewer) void writeQueueCache({ viewer, load: persistedLoad }).catch(() => {})
-			})
-			.catch((error) => {
-				flashNotice(errorMessage(error))
-			})
-			.finally(() => {
-				setLoadingMoreKey((current) => (current === cacheKey ? null : current))
-			})
-		return true
-	}
-
-	const resetLoadingMore = () => setLoadingMoreKey(null)
-
-	return { loadMorePullRequests, isLoadingMorePullRequests, resetLoadingMore }
+	return { loadMorePullRequests: loadMore, isLoadingMorePullRequests: isLoadingMore, resetLoadingMore }
 }

@@ -1,5 +1,112 @@
 # @kitlangton/ghui
 
+## 0.9.0
+
+### Minor Changes
+
+- f560aa5: Add "open pull request in editor" (`e`): suspend the TUI and launch a configurable command (e.g. `nvim` with diffview/octo, or `code`). Configure `editorCommand` and `repoPaths` in `config.json`, with gh-dash-style `{{...}}` substitutions and `owner/repo` path matching.
+- f560aa5: Add a per-PR GitHub Actions runs view (`a`): see a pull request's workflow runs, drill into jobs and steps, jump between failures, and open a step's log or the run in the browser — without leaving the terminal. Built as a full-screen PR view mode (a peer of the diff view), backed by `gh run list` / `gh run view`.
+
+## 0.8.0
+
+### Minor Changes
+
+- 4bfd33e: Add a docked Changed Files panel to the diff view. Auto-shows on terminals ≥ 130 cols, with `shift+f` to toggle visibility. The existing `f` "open changed files" key now renders inline in the panel when docked, falling back to the modal overlay on narrow terminals.
+- 00e379c: Add an experimental repository workspace tab bar with Pull Requests and Issues surfaces.
+
+### Patch Changes
+
+- 20bbaf2: Fix issue-detail scrolling, narrow modal layout, stale empty queues, unsafe modal retargeting, cross-surface command actions, preference persistence failures, and deleted-author items.
+- 22a8884: Cache: persist the issue queue, derive a repo rollup from cached PRs +
+  issues, and prewarm `repository_details` in the background so the Issues
+  and Repos tabs paint instantly on launch and repo detail panes feel warm
+  on first selection. Adds an `issues` table mirroring `pull_requests`
+  (reusing `queue_snapshots` with `view_key LIKE 'issue:%'`), a viewer-
+  scoped `readRepoRollup` aggregation, and an opportunistic prewarm with
+  TTL-skip and concurrency 4 for favorites + recents + the detected repo.
+- 75b3c6c: Keep filtered Issue actions and comments aligned with the Issue shown in the workspace.
+- aa2d3b4: Align pull request and issue loading, selection, cache retention, pagination safety, and footer behavior while updating runtime and tooling dependencies.
+- 75b3c6c: Render authored-only pull request queues as compact one-line rows without redundant author and branch metadata.
+- 75b3c6c: Honor the configured fetch limit consistently for Issue first-page loads and pagination state.
+- 4c4a333: Fix repository `author:@me` pull request filters continuing to display the unfiltered repository list after the authored query loads.
+- 75b3c6c: Stabilize HOME pull request loading, selection, refresh, pagination, detail hydration, and diff prefetch while upgrading Effect packages to beta.85.
+- 20bbaf2: Show last-update recency in repository issue lists so their timestamp labels match their activity ordering.
+- e97bdd1: issues now paginate the same way pull requests do. previously the
+  Issues tab cap'd at 50 with no way to load more — the tab read
+  "ISSUES 50" even when a repo had hundreds of open issues.
+
+  the page fetch shape mirrors pull-request pagination end to end:
+  `listIssuePageAtom` + `nextIssueLoadAfterPage` for the cursor-aware
+  append, a `useIssuesLoadMore` hook with the same `inFlightKeyRef`
+  race lock and 15s timeout, and a `loadMoreIssueRowSelectedAtom` that
+  makes the load-more row an explicit selectable slot. the Issues tab
+  now shows "50+" while more pages are available; pressing j past the
+  last issue lands on the load-more row, pressing Enter triggers the
+  next page fetch.
+
+  both pull requests and issues share the same UX:
+
+  ↓ Press enter to load more · N loaded
+
+  and the same race protection — concurrent triggers within a single
+  render tick can't fire parallel fetches with the same cursor.
+
+- 354380d: fix pull-request pagination wedging at "(50 loaded) 50+". the previous
+  auto-load mechanism had three concurrent triggers — a 120ms scroll-position
+  poll, a selection-threshold useEffect, and the j-at-tail step — all gated
+  on React state via `isLoadingMorePullRequests`. since `setLoadingMoreKey`
+  is asynchronous, two triggers in the same tick both saw a cleared flag and
+  fired parallel fetches with the same cursor; the second response then saw
+  `cursorAdvanced=false` and flipped `hasNextPage=false`, killing pagination
+  at 50 with the tab stuck on "50+".
+
+  the fix removes scroll-polling + selection-threshold auto-fire entirely,
+  keeps the explicit j-at-tail trigger, and adds a synchronous
+  `inFlightKeyRef` lock inside `useLoadMore` so multiple triggers within a
+  single tick can't race. also adds a 15s `Promise.race` timeout so a
+  hanging GraphQL response surfaces a flash notice + clears the spinner
+  instead of wedging. the load-more row now prompts "↓ Press j to load more"
+  so the affordance is explicit.
+
+- ab6d931: Show one consistent animated loading-details indicator across pull request detail and diff views.
+- cf8c7d1: Connect issue detail dividers to split-pane borders, simplify workspace chrome, and refresh mock workspace titles.
+- ee6bdb8: stop the "Loading more pull requests" loop that could fire repeatedly
+  when GitHub's cursor-based pagination drifted and returned items
+  already in the list; treat a page that adds no new pull requests as
+  terminal. also surface `updatedAt` on pull requests so the age column
+  and client-side ordering match GitHub's `sort:updated-desc`, fixing a
+  list that looked unordered because the age column was showing days
+  since creation while the server sorted by recent activity
+- 51c36ee: Fix a stalemate bug that left views stuck on Loading:
+
+  - Diff and PR-detail fetches now time out after 30s instead of dangling indefinitely when the underlying family-created atom is interrupted or GC'd before settling — the pane transitions to an error state with a retry hint instead of wedging on "Loading…".
+
+- 6a0f8f9: Keep cached comments visible during refreshes and show persistent, retryable comment loading errors.
+- f9b5b68: Retry transient failures when loading the first page of Issues, matching pull request behavior.
+- 20bbaf2: Hide scrollbars by default while keeping panes scrollable, with a `showScrollbars` config setting to restore visible rails.
+- 86819df: Replace the dangling-prone family-of-runtime.atom pattern with `runtime.fn` for all one-shot fetches (diff, PR details). Eliminates the wedged "Loading…" state that could happen when the underlying AsyncResult got stuck in Waiting after a fiber interrupt — the runtime.fn pattern returns a normal Promise that always resolves or rejects.
+- ed011a3: Internal refactor: drain App.tsx by ~330 lines and reorganize state, hooks,
+  and view components into per-feature modules. No user-facing change. Atoms
+  move into `src/ui/<feature>/atoms.ts` files (theme, diff, comments, filter,
+  detail, workspace, listSelection, notice, modals, pullRequests). Effects
+  extract into custom hooks (`useFlashNotice`, `useSystemAppearancePolling`,
+  `useSpinnerFrame`, `useClampedIndex`, `useTerminalFocus`,
+  `useScrollFollowSelected`, `usePasteHandler`, `useIdleRefresh`,
+  `useDiffPrefetch`, `useWorkspacePreferencesPersistence`). The keymap
+  context object splits into 17 per-domain builders under
+  `src/keymap/contexts/`, composed by `buildAppCtx()`. The 1,379-line
+  `src/ui/modals.tsx` carves into per-modal files under `src/ui/modals/`
+  with the original path preserved as a barrel re-export. New
+  `src/surfaces/` directory holds `RepoWorkspace`, `IssuesWorkspace`, and
+  `WorkspaceModals`.
+- 1001135: rework system theme auto-reload to retry until the terminal palette
+  actually changes, refuse to overwrite the active theme with incomplete
+  or stale palette data, prime a baseline at startup so the first signal
+  behaves correctly, and emit structured events for opt-in debug logging
+  via `GHUI_DEBUG_THEME_RELOAD_LOG`
+- 60f6289: Share the guarded load-more state machine between pull requests and issues.
+- e912547: Show a non-interactive fallback when the terminal is smaller than 60x16 and restore the mounted workspace after resizing.
+
 ## 0.7.1
 
 ### Patch Changes

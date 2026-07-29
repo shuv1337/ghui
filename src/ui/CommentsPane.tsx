@@ -15,6 +15,7 @@ import {
 import { truncateConversationPath } from "./DetailsPane.js"
 import { centerCell, Divider, Filler, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
+import { commentsHeaderStatus, commentsPaneMode, type CommentLoadState } from "./comments/loadState.js"
 
 const META_PREFIX_WIDTH = 2 // "• "
 const PLACEHOLDER_KEY = "__placeholder_new_comment"
@@ -173,24 +174,26 @@ export const CommentsPane = ({
 	item,
 	comments,
 	orderedComments,
-	status,
+	loadState,
 	selectedIndex,
 	contentWidth,
 	paneWidth,
 	height,
 	loadingIndicator,
 	themeGeneration,
+	showScrollbar,
 }: {
 	item: { readonly repository: string; readonly number: number }
 	comments: readonly PullRequestComment[]
 	orderedComments: readonly OrderedComment[]
-	status: "idle" | "loading" | "ready"
+	loadState: CommentLoadState
 	selectedIndex: number
 	contentWidth: number
 	paneWidth: number
 	height: number
 	loadingIndicator: string
 	themeGeneration: number
+	showScrollbar: boolean
 }) => {
 	const realBlocks = useMemo(() => buildBlocks(orderedComments, contentWidth), [orderedComments, contentWidth, themeGeneration])
 	const blocks = useMemo<readonly CommentBlock[]>(() => [...realBlocks, placeholderBlock], [realBlocks])
@@ -200,7 +203,7 @@ export const CommentsPane = ({
 
 	const headerLine = (() => {
 		const repo = shortRepoName(item.repository)
-		const count = status === "loading" ? `${loadingIndicator} loading` : commentCountText(comments.length)
+		const count = commentsHeaderStatus(loadState, commentCountText(comments.length), loadingIndicator)
 		const left = `Comments #${item.number}  ${repo}`
 		const gap = Math.max(2, contentWidth - left.length - count.length)
 		return { left, gap, count }
@@ -211,21 +214,23 @@ export const CommentsPane = ({
 	// CommentsPane stays consistent with DiffPane / DetailsPane.
 	const bodyHeight = Math.max(1, height - 2)
 
-	const showLoading = status !== "ready"
-	const blockRows = blocks.reduce((total, block) => total + block.height, 0)
-	const commentsNeedScroll = !showLoading && blockRows > bodyHeight
+	const paneMode = commentsPaneMode(loadState)
+	const error = loadState.status === "error" ? loadState.error : null
+	const errorRows = error !== null && paneMode === "comments" ? 2 : 0
+	const blockRows = blocks.reduce((total, block) => total + block.height, 0) + errorRows
+	const commentsNeedScroll = paneMode === "comments" && blockRows > bodyHeight
 
 	useEffect(() => {
 		if (!commentsNeedScroll) return
 		const scrollbox = scrollboxRef.current
 		if (!scrollbox) return
-		const blockTop = offsets[safeIndex] ?? 0
+		const blockTop = (offsets[safeIndex] ?? 0) + errorRows
 		const blockBottom = blockTop + (blocks[safeIndex]?.height ?? 1)
 		const viewportTop = scrollbox.scrollTop
 		const viewportBottom = viewportTop + bodyHeight
 		if (blockTop < viewportTop) scrollbox.scrollTo({ x: 0, y: blockTop })
 		else if (blockBottom > viewportBottom) scrollbox.scrollTo({ x: 0, y: Math.max(0, blockBottom - bodyHeight) })
-	}, [safeIndex, blocks, offsets, bodyHeight, commentsNeedScroll])
+	}, [safeIndex, blocks, offsets, bodyHeight, commentsNeedScroll, errorRows])
 
 	const renderedBlocks = blocks.map((block, index) => {
 		const isSelected = index === safeIndex
@@ -248,6 +253,13 @@ export const CommentsPane = ({
 			</box>
 		)
 	})
+	const errorBanner =
+		error === null ? null : (
+			<>
+				<PlainLine text={`! Could not load comments: ${error}`} fg={colors.error} />
+				<PlainLine text="  Run Refresh comments to retry." fg={colors.muted} />
+			</>
+		)
 
 	return (
 		<box flexDirection="column" height={height} backgroundColor={colors.background}>
@@ -262,19 +274,28 @@ export const CommentsPane = ({
 			</PaddedRow>
 			<Divider width={paneWidth} />
 			<box height={bodyHeight} flexDirection="column">
-				{showLoading ? (
+				{paneMode === "loading" ? (
 					<>
 						<Filler rows={Math.max(0, Math.floor((bodyHeight - 1) / 2))} prefix="loading-top" />
 						<PlainLine text={centerCell(`${loadingIndicator} Loading comments`, contentWidth)} fg={colors.muted} />
 						<Filler rows={Math.max(0, Math.ceil((bodyHeight - 1) / 2))} prefix="loading-bottom" />
 					</>
+				) : paneMode === "error" ? (
+					<>
+						<Filler rows={Math.max(0, Math.floor((bodyHeight - 2) / 2))} prefix="error-top" />
+						<PlainLine text={centerCell(`Could not load comments: ${error ?? "Unknown error"}`, contentWidth)} fg={colors.error} />
+						<PlainLine text={centerCell("Run Refresh comments to retry.", contentWidth)} fg={colors.muted} />
+						<Filler rows={Math.max(0, Math.ceil((bodyHeight - 2) / 2))} prefix="error-bottom" />
+					</>
 				) : !commentsNeedScroll ? (
 					<box flexGrow={1} flexDirection="column">
+						{errorBanner}
 						{renderedBlocks}
 						<Filler rows={Math.max(0, bodyHeight - blockRows)} prefix="comments-pad" />
 					</box>
 				) : (
-					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: true }}>
+					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbar }}>
+						{errorBanner}
 						{renderedBlocks}
 					</scrollbox>
 				)}

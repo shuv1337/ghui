@@ -1,5 +1,6 @@
 import type { PullRequestItem } from "../domain.js"
 import { colors } from "./colors.js"
+import { diffStatText } from "./diff.js"
 
 type DiffStatsPart = { readonly key: string; readonly text: string; readonly color: string }
 
@@ -12,8 +13,8 @@ const diffStatsParts = (pullRequest: PullRequestItem): readonly DiffStatsPart[] 
 	].filter((part): part is DiffStatsPart => part !== null)
 }
 
-export const DiffStats = ({ pullRequest }: { pullRequest: PullRequestItem }) => {
-	if (!pullRequest.detailLoaded) return <span fg={colors.muted}>loading details</span>
+export const DiffStats = ({ pullRequest, loadingIndicator }: { pullRequest: PullRequestItem; loadingIndicator: string }) => {
+	if (!pullRequest.detailLoaded) return <span fg={colors.muted}>{diffStatText(pullRequest, loadingIndicator)}</span>
 	const parts = diffStatsParts(pullRequest)
 	return (
 		<>

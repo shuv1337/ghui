@@ -19,10 +19,12 @@ export interface DiffViewCtx {
 	readonly alignAnchor: (align: DiffAlign) => void
 	readonly selectSide: (side: DiffSide) => void
 	readonly openChangedFiles: () => void
+	readonly toggleFilePanel: () => void
 	readonly openSubmitReview: () => void
 	readonly nextFile: () => void
 	readonly previousFile: () => void
 	readonly openInBrowser: () => void
+	readonly openInEditor: () => void
 }
 
 const Diff = context<DiffViewCtx>()
@@ -78,6 +80,7 @@ export const diffViewKeymap = Diff(
 
 	// File nav
 	{ id: "diff.changed-files", title: "Changed files", keys: ["f"], run: (s) => s.openChangedFiles() },
+	{ id: "diff.toggle-file-panel", title: "Toggle file panel", keys: ["shift+f"], run: (s) => s.toggleFilePanel() },
 	{ id: "diff.next-file", title: "Next file", keys: ["]"], run: (s) => s.nextFile() },
 	{ id: "diff.previous-file", title: "Previous file", keys: ["["], run: (s) => s.previousFile() },
 	{ id: "diff.submit-review", title: "Review pull request", keys: ["shift+r"], run: (s) => s.openSubmitReview() },
@@ -90,4 +93,5 @@ export const diffViewKeymap = Diff(
 	{ id: "diff.align-bottom", title: "Align bottom", keys: ["z b"], run: (s) => s.alignAnchor("bottom") },
 
 	{ id: "diff.open-browser", title: "Open in browser", keys: ["o"], run: (s) => s.openInBrowser() },
+	{ id: "diff.open-editor", title: "Open in editor", keys: ["e"], run: (s) => s.openInEditor() },
 )

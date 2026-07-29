@@ -8,13 +8,13 @@ import { pullRequestRowDisplay, repoColor, reviewIcon } from "./pullRequests.js"
 
 export type PullRequestGroups = Array<[string, PullRequestItem[]]>
 
-const pullRequestListRowHeight = (row: PullRequestListRow) => (row._tag === "pull-request" ? 2 : 1)
+const pullRequestListRowHeight = (row: PullRequestListRow) => (row._tag === "pull-request" && !row.compact ? 2 : 1)
 
 export type PullRequestListRow =
 	| { readonly _tag: "title" }
 	| { readonly _tag: "message"; readonly text: string; readonly color: string }
 	| { readonly _tag: "group"; readonly repository: string; readonly pullRequests: readonly PullRequestItem[] }
-	| { readonly _tag: "pull-request"; readonly pullRequest: PullRequestItem; readonly numberWidth: number; readonly ageWidth: number }
+	| { readonly _tag: "pull-request"; readonly pullRequest: PullRequestItem; readonly numberWidth: number; readonly ageWidth: number; readonly compact: boolean }
 	| { readonly _tag: "load-more"; readonly text: string }
 
 const GROUP_ICON = "◆"
@@ -59,6 +59,7 @@ export const buildPullRequestListRows = ({
 	loadingIndicator = "-",
 	showTitle = true,
 	showRepositoryGroups = true,
+	compact = false,
 }: {
 	readonly groups: PullRequestGroups
 	readonly status: LoadStatus
@@ -70,6 +71,7 @@ export const buildPullRequestListRows = ({
 	readonly loadingIndicator?: string
 	readonly showTitle?: boolean
 	readonly showRepositoryGroups?: boolean
+	readonly compact?: boolean
 }): readonly PullRequestListRow[] => {
 	const itemCount = groups.reduce((count, [, pullRequests]) => count + pullRequests.length, 0)
 	const rows: PullRequestListRow[] = showTitle ? [{ _tag: "title" }] : []
@@ -81,19 +83,23 @@ export const buildPullRequestListRows = ({
 		if (showRepositoryGroups) rows.push({ _tag: "group", repository, pullRequests })
 		const numberWidth = groupNumberWidth(pullRequests)
 		const ageWidth = groupAgeWidth(pullRequests)
-		for (const pullRequest of pullRequests) rows.push({ _tag: "pull-request", pullRequest, numberWidth, ageWidth })
+		for (const pullRequest of pullRequests) rows.push({ _tag: "pull-request", pullRequest, numberWidth, ageWidth, compact })
 	}
 	if (status === "ready" && itemCount > 0 && (hasMore || isLoadingMore)) {
-		rows.push({ _tag: "load-more", text: isLoadingMore ? `${loadingIndicator} Loading more pull requests... (${loadedCount} loaded)` : `- ${loadedCount} loaded, more available` })
+		rows.push({
+			_tag: "load-more",
+			text: isLoadingMore ? `${loadingIndicator} Loading more pull requests... (${loadedCount} loaded)` : `↓ Press enter to load more  ·  ${loadedCount} loaded`,
+		})
 	}
 	return rows
 }
 
-export const pullRequestListRowIndex = (rows: readonly PullRequestListRow[], url: string | null) => {
-	if (!url) return null
+export const pullRequestListRowIndex = (rows: readonly PullRequestListRow[], url: string | null, loadMoreSelected = false) => {
+	if (!url && !loadMoreSelected) return null
 	let line = 0
 	for (const row of rows) {
 		if (row._tag === "pull-request" && row.pullRequest.url === url) return line
+		if (row._tag === "load-more" && loadMoreSelected) return line
 		line += pullRequestListRowHeight(row)
 	}
 	return null
@@ -109,6 +115,7 @@ const PullRequestRow = ({
 	numWidth,
 	ageColWidth,
 	filterText,
+	compact,
 	onSelect,
 	onHoverChange,
 }: {
@@ -119,6 +126,7 @@ const PullRequestRow = ({
 	numWidth: number
 	ageColWidth: number
 	filterText: string
+	compact: boolean
 	onSelect: () => void
 	onHoverChange: (hovered: boolean) => void
 }) => {
@@ -157,16 +165,18 @@ const PullRequestRow = ({
 						<span fg={display.checkFg}>{fitCell(display.checkText, checkWidth, "right")}</span>
 						{fillerWidth > 0 ? <span>{" ".repeat(fillerWidth)}</span> : null}
 					</TextLine>
-					<TextLine width={contentWidth} fg={colors.muted} bg={rowBg}>
-						<span>{" ".repeat(metaIndentWidth)}</span>
-						<MatchedCell text={authorText} width={branchText ? authorText.length : metaWidth} query={filterText} />
-						{branchText ? <span> </span> : null}
-						{branchText ? (
-							<span fg={colors.separator}>
-								<MatchedCell text={branchText} width={branchWidth} query={filterText} />
-							</span>
-						) : null}
-					</TextLine>
+					{compact ? null : (
+						<TextLine width={contentWidth} fg={colors.muted} bg={rowBg}>
+							<span>{" ".repeat(metaIndentWidth)}</span>
+							<MatchedCell text={authorText} width={branchText ? authorText.length : metaWidth} query={filterText} />
+							{branchText ? <span> </span> : null}
+							{branchText ? (
+								<span fg={colors.separator}>
+									<MatchedCell text={branchText} width={branchWidth} query={filterText} />
+								</span>
+							) : null}
+						</TextLine>
+					)}
 				</>
 			)}
 		</SelectableRow>
@@ -176,6 +186,7 @@ const PullRequestRow = ({
 export const PullRequestList = ({
 	groups,
 	selectedUrl,
+	loadMoreSelected = false,
 	status,
 	error,
 	contentWidth,
@@ -185,11 +196,14 @@ export const PullRequestList = ({
 	isLoadingMore,
 	loadingIndicator,
 	onSelectPullRequest,
+	onSelectLoadMore,
 	showTitle = true,
 	showRepositoryGroups = true,
+	compact = false,
 }: {
 	groups: PullRequestGroups
 	selectedUrl: string | null
+	loadMoreSelected?: boolean
 	status: LoadStatus
 	error: string | null
 	contentWidth: number
@@ -199,8 +213,10 @@ export const PullRequestList = ({
 	isLoadingMore: boolean
 	loadingIndicator: string
 	onSelectPullRequest: (url: string) => void
+	onSelectLoadMore?: () => void
 	showTitle?: boolean
 	showRepositoryGroups?: boolean
+	compact?: boolean
 }) => {
 	const rows = buildPullRequestListRows({
 		groups,
@@ -213,6 +229,7 @@ export const PullRequestList = ({
 		loadingIndicator,
 		showTitle,
 		showRepositoryGroups,
+		compact,
 	})
 	const { isHovered, onHoverChange } = useHoverState<string>()
 
@@ -221,7 +238,16 @@ export const PullRequestList = ({
 			{rows.map((row, index) => {
 				if (row._tag === "title") return <SectionTitle key="title" title="PULL REQUESTS" />
 				if (row._tag === "message") return <PlainLine key={`message-${index}`} text={row.text} fg={row.color} />
-				if (row._tag === "load-more") return <PlainLine key="load-more" text={row.text} fg={colors.muted} />
+				if (row._tag === "load-more")
+					return (
+						<SelectableRow key="load-more" width={contentWidth} selected={loadMoreSelected} hovered={false} onSelect={() => onSelectLoadMore?.()} onHoverChange={() => {}}>
+							{(rowBg) => (
+								<TextLine width={contentWidth} fg={colors.muted} bg={rowBg}>
+									<span>{row.text}</span>
+								</TextLine>
+							)}
+						</SelectableRow>
+					)
 				if (row._tag === "group") return <GroupTitle key={`group-${row.repository}`} label={row.repository} color={repoColor(row.repository)} filterText={filterText} />
 
 				const pullRequestUrl = row.pullRequest.url
@@ -235,6 +261,7 @@ export const PullRequestList = ({
 						numWidth={row.numberWidth}
 						ageColWidth={row.ageWidth}
 						filterText={filterText}
+						compact={row.compact}
 						onSelect={() => onSelectPullRequest(pullRequestUrl)}
 						onHoverChange={onHoverChange(pullRequestUrl)}
 					/>

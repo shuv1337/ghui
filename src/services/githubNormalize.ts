@@ -11,6 +11,13 @@ import {
 	type RepositoryDetails,
 	type RepositoryMergeMethods,
 	type ReviewStatus,
+	type RunConclusion,
+	runConclusions,
+	type RunJob,
+	type RunStatus,
+	type RunStep,
+	type WorkflowRun,
+	type WorkflowRunDetails,
 } from "../domain.js"
 import { type ItemPage } from "../item.js"
 import {
@@ -25,6 +32,10 @@ import {
 	type RawPullRequestFile,
 	type RawPullRequestNode,
 	type RawPullRequestSummaryNode,
+	type RawRunJob,
+	type RawRunStep,
+	type RawWorkflowRun,
+	type RawWorkflowRunDetails,
 	type RepositoryDetailsResponseSchema,
 	type RepositoryMergeMethodsResponseSchema,
 } from "./githubSchemas.js"
@@ -152,7 +163,7 @@ export const parsePullRequestSummary = (item: RawPullRequestSummaryNode): PullRe
 	const checkInfo = getCheckInfoFromContexts(item.statusCheckRollup?.contexts.nodes ?? [])
 	return {
 		repository: item.repository.nameWithOwner,
-		author: item.author.login,
+		author: item.author?.login ?? "unknown",
 		headRefOid: item.headRefOid,
 		headRefName: item.headRefName,
 		baseRefName: item.baseRefName,
@@ -203,7 +214,7 @@ export const parseIssueSearchNode = (item: RawIssueSearchNode): IssueItem => ({
 	state: item.state.toLowerCase() === "closed" ? "closed" : "open",
 	title: item.title,
 	body: item.body,
-	author: item.author.login,
+	author: item.author?.login ?? "unknown",
 	labels: item.labels.nodes.map((label) => ({
 		name: label.name,
 		color: label.color ? `#${label.color.replace(/^#/, "")}` : null,
@@ -228,6 +239,62 @@ export const parseRepositoryDetails = (repository: string, node: RawRepositoryDe
 	pushedAt: normalizeDate(node.pushedAt),
 	isArchived: node.isArchived,
 	isPrivate: node.isPrivate,
+})
+
+// === Workflow runs ===
+
+const normalizeRunStatus = (status: string): RunStatus => (status === "completed" ? "completed" : status === "in_progress" ? "in_progress" : "queued")
+
+const normalizeRunConclusion = (conclusion: string | null | undefined): RunConclusion => {
+	if (!conclusion) return null
+	const value = conclusion.toLowerCase()
+	return (runConclusions as readonly string[]).includes(value) ? (value as Exclude<RunConclusion, null>) : null
+}
+
+const parseRunStep = (step: RawRunStep): RunStep => ({
+	number: step.number,
+	name: step.name,
+	status: normalizeRunStatus(step.status),
+	conclusion: normalizeRunConclusion(step.conclusion),
+	startedAt: normalizeDate(step.startedAt),
+	completedAt: normalizeDate(step.completedAt),
+})
+
+const parseRunJob = (job: RawRunJob): RunJob => ({
+	id: job.databaseId,
+	name: job.name,
+	status: normalizeRunStatus(job.status),
+	conclusion: normalizeRunConclusion(job.conclusion),
+	startedAt: normalizeDate(job.startedAt),
+	completedAt: normalizeDate(job.completedAt),
+	url: job.url ?? "",
+	steps: [...(job.steps ?? [])].sort((a, b) => a.number - b.number).map(parseRunStep),
+})
+
+export const parseWorkflowRun = (run: RawWorkflowRun): WorkflowRun => ({
+	id: run.databaseId,
+	number: run.number,
+	attempt: run.attempt ?? 1,
+	workflowName: run.workflowName ?? run.name ?? "Workflow",
+	displayTitle: run.displayTitle ?? "",
+	event: run.event ?? "",
+	headBranch: run.headBranch ?? "",
+	headSha: run.headSha ?? "",
+	status: normalizeRunStatus(run.status),
+	conclusion: normalizeRunConclusion(run.conclusion),
+	url: run.url ?? "",
+	createdAt: new Date(run.createdAt),
+	startedAt: normalizeDate(run.startedAt),
+	updatedAt: normalizeDate(run.updatedAt),
+})
+
+// Newest first, matching the runs-list mock.
+export const parseWorkflowRuns = (runs: readonly RawWorkflowRun[]): readonly WorkflowRun[] =>
+	[...runs].map(parseWorkflowRun).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+
+export const parseRunDetails = (details: RawWorkflowRunDetails): WorkflowRunDetails => ({
+	...parseWorkflowRun(details),
+	jobs: [...(details.jobs ?? [])].map(parseRunJob),
 })
 
 type RawMergeInfo = Schema.Schema.Type<typeof MergeInfoResponseSchema>

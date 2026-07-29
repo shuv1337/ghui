@@ -14,6 +14,7 @@ import type {
 import type { ItemListInput } from "../item.js"
 import { mergeInfoFromPullRequest } from "../mergeActions.js"
 import { mockAuthor, mockBody, mockIssueTitle, mockLabels, mockPullRequestBranch, mockPullRequestTitle } from "./mockData.js"
+import { mockWorkflowRunDetails, mockWorkflowRuns } from "./mockRuns.js"
 import { GitHubService } from "./GitHubService.js"
 import { loadMockFixtureSnapshot } from "./mockFixtures.js"
 
@@ -292,6 +293,17 @@ export const MockGitHubService = {
 				},
 				getAuthenticatedUser: () => Effect.succeed(username),
 				getPullRequestDiff: (repository, number) => Effect.succeed(fixturePullRequest(repository, number)?.diff ?? mockDiff),
+				listWorkflowRunsForCommit: (repository, headSha) => Effect.succeed(mockWorkflowRuns(repository, headSha)),
+				getWorkflowRunDetails: (repository, runId) => {
+					for (const pr of [...items, ...userItems]) {
+						const details = mockWorkflowRunDetails(repository, pr.headRefOid, runId)
+						if (details) return Effect.succeed(details)
+					}
+					// Unknown id (shouldn't happen in mock): fall back to the first PR's first run.
+					const firstSha = items[0]?.headRefOid ?? "deadbeef00000000"
+					const first = mockWorkflowRuns(repository, firstSha)[0]
+					return Effect.succeed(mockWorkflowRunDetails(repository, firstSha, first?.id ?? runId) ?? { ...(first ?? ({} as never)), jobs: [] })
+				},
 				listPullRequestReviewComments: (repository, number) => Effect.succeed(reviewComments(repository, number)),
 				listPullRequestComments: (repository, number) => Effect.succeed(pullRequestComments(repository, number)),
 				listIssueComments: (repository, number) => Effect.succeed(issueComments(repository, number)),

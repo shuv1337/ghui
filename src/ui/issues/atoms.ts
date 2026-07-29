@@ -1,15 +1,24 @@
 import { Effect } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
+import { config } from "../../config.js"
 import type { IssueItem } from "../../domain.js"
-import { issueQueryToListInput } from "../../item.js"
+import { itemQueryCacheKeyHasRepository, type ItemListInput } from "../../item.js"
+import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
+import { loadItemQueue } from "../../item/queue.js"
+import { retryItemQueueFirstPage } from "../../item/retry.js"
 import type { IssueLoad } from "../../issueLoad.js"
-import { type IssueView, initialIssueView, issueViewCacheKey, issueViewMode, issueViewRepository, issueViewToQuery } from "../../issueViews.js"
+import { freshIssueLoad } from "../../issueCache.js"
+import { type IssueView, initialIssueView, issueViewCacheKey, issueViewMode, issueViewRepository, issueViewToListInput, issueViewToQuery } from "../../issueViews.js"
 import { CacheService } from "../../services/CacheService.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { detectedRepository, githubRuntime, pullRequestPageSize } from "../../services/runtime.js"
+import { selectedRepositoryAtom, workspaceSurfaceAtom } from "../../workspace/atoms.js"
+import { effectiveFilterQueryAtom } from "../filter/atoms.js"
+import { filterByScore, issueFilterScore } from "../filter/scoring.js"
+import { initialRetryProgress, RetryProgress } from "../FooterHints.js"
+import { orderIssuesForDisplay } from "../IssueList.js"
 import { selectedIssueIndexAtom } from "../listSelection/atoms.js"
-import { issueOverridesAtom } from "../pullRequests/atoms.js"
 
 // Re-export the view type and helpers for back-compat with existing call sites
 // that import from this module. New code should import directly from
@@ -17,97 +26,113 @@ import { issueOverridesAtom } from "../pullRequests/atoms.js"
 export { initialIssueView, issueViewMode, issueViewRepository, issueViewToQuery, type IssueView }
 
 export const activeIssueViewAtom = Atom.make<IssueView>(initialIssueView(detectedRepository)).pipe(Atom.keepAlive)
-
-const emptyIssueLoad = (view: IssueView): IssueLoad => ({
-	view,
-	data: [],
-	fetchedAt: null,
-	endCursor: null,
-	hasNextPage: false,
-})
+export const issueOverridesAtom = Atom.make<Record<string, IssueItem>>({}).pipe(Atom.keepAlive)
+export const issueRetryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).pipe(Atom.keepAlive)
 
 // In-memory mirror of `queue_snapshots` for issues, keyed by `issueViewCacheKey`.
 // Mirrors `queueLoadCacheAtom` for PRs. Lets us paint the cached list before
 // the network request resolves.
 export const issueQueueLoadCacheAtom = Atom.make<Partial<Record<string, IssueLoad>>>({}).pipe(Atom.keepAlive)
 
-const issueCacheViewerFor = (view: IssueView, username: string | null): string | null => (view._tag === "Repository" ? "anonymous" : username)
+// Cap repository-scoped entries across every mode; user-scoped queues stay forever.
+// Mirrors the PR-side `trimQueueLoadCache` shape so behaviour is consistent.
+const MAX_ISSUE_REPOSITORY_CACHE_ENTRIES = 8
+const trimIssueQueueLoadCache = (cache: Partial<Record<string, IssueLoad>>) => {
+	return trimItemLoadCache(cache, itemQueryCacheKeyHasRepository, MAX_ISSUE_REPOSITORY_CACHE_ENTRIES)
+}
 
-// The `(get)` parameter makes this atom reactive on the active issue view.
-// Using `get(activeIssueViewAtom)` (rather than `Atom.get(...)` as an Effect
-// service) registers the dependency via AtomContext, so any view change —
-// e.g. flipping the filter modal to "mine" — invalidates and re-fetches.
-export const issuesAtom = githubRuntime
-	.atom(
-		Effect.fnUntraced(function* (get) {
-			const github = yield* GitHubService
-			const cacheService = yield* CacheService
-			const view = get(activeIssueViewAtom)
-			const cacheKey = issueViewCacheKey(view)
-			const mode = issueViewMode(view)
-			const repository = issueViewRepository(view)
-			// "all" needs a repository; without one we have nothing to show until the user picks one.
-			if (mode === "all" && !repository) return emptyIssueLoad(view)
-			const cacheUsername = view._tag === "Repository" ? null : yield* github.getAuthenticatedUser().pipe(Effect.catch(() => Effect.succeed(null)))
-			const cacheViewer = issueCacheViewerFor(view, cacheUsername)
-			if (cacheViewer) {
-				const cachedLoad = yield* cacheService.readIssueQueue(cacheViewer, view).pipe(Effect.catch(() => Effect.succeed(null)))
-				if (cachedLoad) {
-					yield* Atom.update(issueQueueLoadCacheAtom, (cache) => (cache[cacheKey] ? cache : { ...cache, [cacheKey]: cachedLoad }))
-				}
-			}
-			const page = yield* github.listIssuePage(issueQueryToListInput(issueViewToQuery(view), null, pullRequestPageSize))
-			const load = yield* Atom.modify(issueQueueLoadCacheAtom, (cache) => {
-				const next: IssueLoad = {
-					view,
-					data: page.items,
-					fetchedAt: new Date(),
-					endCursor: page.endCursor,
-					hasNextPage: page.hasNextPage,
-				}
-				return [next, { ...cache, [cacheKey]: next }]
-			})
-			if (cacheViewer) yield* cacheService.writeIssueQueue(cacheViewer, load)
-			return load
-		}),
-	)
-	.pipe(Atom.keepAlive)
+export const issuesAtom = githubRuntime.atom(
+	Effect.fnUntraced(function* (get) {
+		const view = get(activeIssueViewAtom)
+		const github = yield* GitHubService
+		const cacheService = yield* CacheService
+		return yield* loadItemQueue(view, issueQueueLoadCacheAtom, {
+			keyOfView: issueViewCacheKey,
+			getAuthenticatedUser: github.getAuthenticatedUser(),
+			readCached: (viewer, issueView) => cacheService.readIssueQueue(viewer, issueView),
+			writeCached: (viewer, load) => cacheService.writeIssueQueue(viewer, load),
+			fetchFirstPage: (issueView) =>
+				retryItemQueueFirstPage(github.listIssuePage(issueViewToListInput(issueView, null, Math.min(pullRequestPageSize, config.prFetchLimit))), issueRetryProgressAtom),
+			freshLoad: (issueView, page) => freshIssueLoad(issueView, page, config.prFetchLimit),
+			trimCache: trimIssueQueueLoadCache,
+		})
+	}),
+)
 
-// Display source for the Issues tab. Reads the in-memory queue cache first
-// (populated by either the SQLite read or the network response) and falls
-// back to whatever the network atom most recently resolved. Mirrors
-// `pullRequestLoadAtom`.
-export const issueLoadAtom = Atom.make((get) => {
+// Pure resolver — mirrors `resolveLoad` in `ui/pullRequests/atoms.ts`.
+// Inlined into every consumer instead of going through `issueLoadAtom`
+// because that intermediate derived atom does not reliably re-evaluate
+// when its upstream deps change. See the longer note on `resolveLoad`
+// in the PR atoms file.
+export const resolveIssueLoad = (view: IssueView, cache: Partial<Record<string, IssueLoad>>, result: AsyncResult.AsyncResult<IssueLoad, unknown>): IssueLoad | null =>
+	resolveItemLoad(view, cache, result, issueViewCacheKey)
+
+export const showIssueRepositoryGroupsAtom = Atom.make((get) => get(selectedRepositoryAtom) === null)
+
+export const allIssuesAtom = Atom.make((get): readonly IssueItem[] => {
 	const view = get(activeIssueViewAtom)
-	const cacheKey = issueViewCacheKey(view)
-	const cache = get(issueQueueLoadCacheAtom)
-	const result = get(issuesAtom)
-	const resolved = AsyncResult.getOrElse(result, () => null)
-	return cache[cacheKey] ?? (resolved && issueViewCacheKey(resolved.view) === cacheKey ? resolved : null)
-})
-
-export const isLoadingIssueViewAtom = Atom.make((get) => {
-	const cacheKey = issueViewCacheKey(get(activeIssueViewAtom))
-	const resolved = AsyncResult.getOrElse(get(issuesAtom), () => null)
-	return resolved !== null && issueViewCacheKey(resolved.view) !== cacheKey
-})
-
-export const issueListAtom = Atom.make((get): readonly IssueItem[] => {
-	const load = get(issueLoadAtom)
+	// The fetch atom writes every displayable result to the keyed cache. Do not
+	// introduce a dynamic runtime-atom dependency in the displayed pipeline;
+	// it can retain the previous view after a repo filter transition.
+	const load = get(issueQueueLoadCacheAtom)[issueViewCacheKey(view)] ?? null
 	const overrides = get(issueOverridesAtom)
-	// Defensive scope filter — see displayedPullRequestsAtom for the same
-	// pattern. Without it, a stale cache entry can surface items from the
-	// previous repository under the new breadcrumb.
-	const scope = issueViewRepository(get(activeIssueViewAtom))
+	const scope = get(selectedRepositoryAtom)
 	const source = (load?.data ?? []).filter((issue) => scope === null || issue.repository === scope)
-	return source.map((issue) => overrides[issue.url] ?? issue)
+	const mapped = source.map((issue) => {
+		const override = overrides[issue.url]
+		return override && override.updatedAt >= issue.updatedAt ? override : issue
+	})
+	const merged = mapped.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+	return orderIssuesForDisplay(merged, get(showIssueRepositoryGroupsAtom))
+})
+
+// Canonical displayed Issue list. Rendering, commands, comments, mutations,
+// and load-more selection all read this atom so a text filter cannot leave the
+// visible Issue different from the Issue an action targets.
+export const issueListAtom = Atom.make((get): readonly IssueItem[] => {
+	const issues = get(allIssuesAtom)
+	const query = get(workspaceSurfaceAtom) === "issues" ? get(effectiveFilterQueryAtom) : ""
+	if (query.length === 0) return issues
+	return orderIssuesForDisplay(
+		filterByScore(issues, query, issueFilterScore, (issue) => issue.updatedAt.getTime()),
+		get(showIssueRepositoryGroupsAtom),
+	)
 })
 
 export const selectedIssueAtom = Atom.make((get): IssueItem | null => {
 	const issues = get(issueListAtom)
-	if (issues.length === 0) return null
-	const index = Math.max(0, Math.min(get(selectedIssueIndexAtom), issues.length - 1))
-	return issues[index] ?? null
+	return issues[get(selectedIssueIndexAtom)] ?? null
+})
+
+export const listIssuePageAtom = githubRuntime.fn<ItemListInput<"issue">>()((input) => GitHubService.use((github) => github.listIssuePage(input)))
+
+export const writeIssueQueueAtom = githubRuntime.fn<{ readonly viewer: string; readonly load: IssueLoad }>()(({ viewer, load }) =>
+	CacheService.use((cache) => cache.writeIssueQueue(viewer, load)),
+)
+
+export const loadedIssueCountAtom = Atom.make((get) => {
+	return get(issueQueueLoadCacheAtom)[issueViewCacheKey(get(activeIssueViewAtom))]?.data.length ?? 0
+})
+
+export const hasMoreIssuesAtom = Atom.make((get) => {
+	const load = get(issueQueueLoadCacheAtom)[issueViewCacheKey(get(activeIssueViewAtom))] ?? null
+	return Boolean(load?.hasNextPage && load.data.length < config.prFetchLimit)
+})
+
+export const issueFetchInFlightAtom = Atom.make((get) => get(issuesAtom).waiting)
+
+export const loadingMoreIssueKeyAtom = Atom.make<string | null>(null).pipe(Atom.keepAlive)
+
+// Selection rests on the load-more pseudo-row when the index is one past the
+// last issue. Mirrors `loadMoreRowSelectedAtom` for PRs.
+export const loadMoreIssueRowSelectedAtom = Atom.make((get) => {
+	const issues = get(issueListAtom)
+	return get(issueLoadMoreSlotAvailableAtom) && get(selectedIssueIndexAtom) === issues.length
+})
+
+export const issueLoadMoreSlotAvailableAtom = Atom.make((get) => {
+	const filterActive = get(workspaceSurfaceAtom) === "issues" && get(effectiveFilterQueryAtom).length > 0
+	return !get(issueFetchInFlightAtom) && !filterActive && get(hasMoreIssuesAtom) && get(issueListAtom).length > 0
 })
 
 export const addIssueLabelAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number; readonly label: string }>()((input) =>

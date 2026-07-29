@@ -6,7 +6,8 @@ import { SplitPane } from "../ui/paneLayout.js"
 import { Divider } from "../ui/primitives.js"
 import { getRepoDetailJunctionRows, RepoDetailPane, RepoList, type RepositoryListItem } from "../ui/RepoList.js"
 
-export interface RepoWorkspaceProps {
+export interface RepoSurfaceProps {
+	readonly showScrollbars: boolean
 	readonly isWideLayout: boolean
 	readonly wideBodyHeight: number
 	readonly contentWidth: number
@@ -25,7 +26,8 @@ export interface RepoWorkspaceProps {
 	readonly detailPreviewScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 }
 
-export const RepoWorkspace = ({
+export const RepoSurface = ({
+	showScrollbars,
 	isWideLayout,
 	wideBodyHeight,
 	contentWidth,
@@ -42,7 +44,7 @@ export const RepoWorkspace = ({
 	selectedRepositoryItem,
 	selectedRepositoryDetails,
 	detailPreviewScrollRef,
-}: RepoWorkspaceProps) => {
+}: RepoSurfaceProps) => {
 	if (isWideLayout) {
 		return (
 			<SplitPane
@@ -53,7 +55,7 @@ export const RepoWorkspace = ({
 				junctionRows={getRepoDetailJunctionRows(selectedRepositoryItem, selectedRepositoryDetails)}
 				left={
 					repoListNeedsScroll ? (
-						<scrollbox focusable={false} height={wideBodyHeight} flexGrow={0}>
+						<scrollbox focusable={false} height={wideBodyHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 							<box flexDirection="column" paddingLeft={sectionPadding}>
 								<RepoList {...repoListProps} contentWidth={leftContentWidth} />
 							</box>
@@ -64,7 +66,9 @@ export const RepoWorkspace = ({
 						</box>
 					)
 				}
-				right={<RepoDetailPane repository={selectedRepositoryItem} details={selectedRepositoryDetails} width={rightPaneWidth} height={wideBodyHeight} />}
+				right={
+					<RepoDetailPane repository={selectedRepositoryItem} details={selectedRepositoryDetails} width={rightPaneWidth} height={wideBodyHeight} showScrollbar={showScrollbars} />
+				}
 			/>
 		)
 	}
@@ -72,7 +76,7 @@ export const RepoWorkspace = ({
 	return (
 		<box key="narrow-repos" height={wideBodyHeight} flexDirection="column">
 			{narrowRepoListNeedsScroll ? (
-				<scrollbox focusable={false} height={narrowRepoListHeight} flexGrow={0}>
+				<scrollbox focusable={false} height={narrowRepoListHeight} flexGrow={0} verticalScrollbarOptions={{ visible: showScrollbars }}>
 					<box flexDirection="column" paddingLeft={sectionPadding} paddingRight={sectionPadding}>
 						<RepoList {...repoListProps} contentWidth={fullscreenContentWidth} />
 					</box>
@@ -90,6 +94,7 @@ export const RepoWorkspace = ({
 				height={narrowRepoDetailHeight}
 				descriptionLineLimit={DETAIL_BODY_SCROLL_LIMIT}
 				descriptionScrollRef={detailPreviewScrollRef}
+				showScrollbar={showScrollbars}
 			/>
 		</box>
 	)

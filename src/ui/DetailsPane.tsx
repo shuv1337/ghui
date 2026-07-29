@@ -30,7 +30,7 @@ export const DETAIL_BODY_LINES = 6
 export const DETAIL_PLACEHOLDER_ROWS = 4
 export const DETAIL_BODY_SCROLL_LIMIT = 1_000
 
-export type DetailCommentsStatus = "idle" | "loading" | "ready"
+export type DetailCommentsStatus = "idle" | "loading" | "ready" | "error"
 
 const codeFencePattern = /^```\s*([a-zA-Z0-9_-]+)?/
 const codeTokenPattern =
@@ -525,6 +525,7 @@ export const DetailHeader = ({
 	pullRequest,
 	contentWidth,
 	paneWidth,
+	loadingIndicator,
 	showChecks = false,
 	comments = [],
 	commentsStatus = "idle",
@@ -532,6 +533,7 @@ export const DetailHeader = ({
 	pullRequest: PullRequestItem
 	contentWidth: number
 	paneWidth: number
+	loadingIndicator: string
 	showChecks?: boolean
 	comments?: readonly PullRequestComment[]
 	commentsStatus?: DetailCommentsStatus
@@ -539,7 +541,7 @@ export const DetailHeader = ({
 	const wrappedTitle = wrapText(pullRequest.title, Math.max(1, paneWidth - 2))
 	const layout = computeDetailHeaderLayout(pullRequest, paneWidth, showChecks)
 	const { hasChecks, checkRowsCount, bottomDividerHeight, labelRows } = layout
-	const statsText = diffStatText(pullRequest)
+	const statsText = diffStatText(pullRequest, loadingIndicator)
 	const commentsText = commentsStatus === "ready" && comments.length > 0 ? commentCountText(comments.length) : null
 	const opened = formatRelativeDate(pullRequest.createdAt)
 	const target = pullRequest.baseRefName && pullRequest.baseRefName !== pullRequest.defaultBranchName ? ` → ${pullRequest.baseRefName}` : ""
@@ -563,7 +565,7 @@ export const DetailHeader = ({
 				<TextLine>
 					{branch ? <span fg={colors.muted}>{branch}</span> : null}
 					<span fg={colors.muted}>{" ".repeat(diffGap)}</span>
-					<DiffStats pullRequest={pullRequest} />
+					<DiffStats pullRequest={pullRequest} loadingIndicator={loadingIndicator} />
 				</TextLine>
 			</PaddedRow>
 			{labelRows.map((row, index) => (
@@ -625,7 +627,7 @@ export const DetailBody = ({
 		return (
 			<box flexDirection="column" paddingLeft={1} paddingRight={1} height={bodyLines}>
 				<Filler rows={topRows} prefix="top" />
-				<PlainLine text={centerCell(`${loadingIndicator} Loading pull request details`, contentWidth)} fg={colors.muted} />
+				<PlainLine text={centerCell(diffStatText(pullRequest, loadingIndicator), contentWidth)} fg={colors.muted} />
 				<Filler rows={bottomRows} prefix="bottom" />
 			</box>
 		)
@@ -748,7 +750,15 @@ export const DetailsPane = ({
 		<box flexDirection="column" height={contentHeight}>
 			{pullRequest ? (
 				<>
-					<DetailHeader pullRequest={pullRequest} contentWidth={contentWidth} paneWidth={paneWidth} showChecks={showChecks} comments={comments} commentsStatus={commentsStatus} />
+					<DetailHeader
+						pullRequest={pullRequest}
+						contentWidth={contentWidth}
+						paneWidth={paneWidth}
+						loadingIndicator={loadingIndicator}
+						showChecks={showChecks}
+						comments={comments}
+						commentsStatus={commentsStatus}
+					/>
 					<DetailBody
 						pullRequest={pullRequest}
 						contentWidth={contentWidth}

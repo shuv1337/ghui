@@ -1,21 +1,21 @@
 import * as Atom from "effect/unstable/reactivity/Atom"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { type PullRequestView, viewEquals, viewLabel } from "../pullRequestViews.js"
-import { commentsViewActiveAtom } from "../ui/comments/atoms.js"
+import { commentsViewActiveAtom, selectedCommentSubjectAtom } from "../ui/comments/atoms.js"
 import { detailFullViewAtom } from "../ui/detail/atoms.js"
 import { diffFullViewAtom, diffReadyAtom } from "../ui/diff/atoms.js"
+import { runsFullViewAtom } from "../ui/runs/atoms.js"
 import { filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
 import { selectedIssueAtom } from "../ui/issues/atoms.js"
 import {
 	activeViewAtom,
-	hasMorePullRequestsAtom,
 	isLoadingMorePullRequestsAtom,
 	loadedPullRequestCountAtom,
+	pullRequestLoadMoreSlotAvailableAtom,
 	pullRequestStatusAtom,
 	selectedPullRequestAtom,
-	selectedRepositoryAtom,
 } from "../ui/pullRequests/atoms.js"
-import { workspaceSurfaceAtom } from "../workspace/atoms.js"
+import { selectedRepositoryAtom, workspaceSurfaceAtom } from "../workspace/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceLabels } from "../workspaceSurfaces.js"
 import { commandRuntimeAtom } from "./runtimeAtom.js"
 
@@ -30,6 +30,7 @@ export const activeSurfaceLabelAtom = Atom.make((get) => workspaceSurfaceLabels[
 // the user that PR commands won't run in the current surface. Used as the
 // base layer for every PR-specific command's disabled chain.
 export const pullRequestSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "pullRequests" ? null : "Pull request surface is not active."))
+export const issueSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "issues" ? null : "Issue surface is not active."))
 
 // Layered reason chains, mirroring the structure that lived in
 // appCommands.ts. Each is `null` when the command can run; otherwise the
@@ -41,9 +42,11 @@ export const noPullRequestReasonAtom = Atom.make((get): string | null => {
 })
 
 export const noOpenPullRequestReasonAtom = Atom.make((get): string | null => {
+	const surface = get(pullRequestSurfaceReasonAtom)
+	if (surface !== null) return surface
 	const pr = get(selectedPullRequestAtom)
 	if (pr) return pr.state === "open" ? null : "Pull request is not open."
-	return get(noPullRequestReasonAtom)
+	return "Select a pull request first."
 })
 
 export const noSelectedItemReasonAtom = Atom.make((get): string | null => {
@@ -58,6 +61,8 @@ export const detailCloseDisabledReasonAtom = Atom.make((get) => (get(detailFullV
 export const diffOpenRequiredReasonAtom = Atom.make((get) => (get(diffFullViewAtom) ? null : "Open a diff first."))
 
 export const diffCloseDisabledReasonAtom = Atom.make((get) => (get(diffFullViewAtom) ? null : "Diff view is not open."))
+
+export const runsCloseDisabledReasonAtom = Atom.make((get) => (get(runsFullViewAtom) ? null : "Runs view is not open."))
 
 export const commentsViewActiveReasonAtom = Atom.make((get) => (get(commentsViewActiveAtom) ? null : "Open comments first."))
 
@@ -94,15 +99,18 @@ export const workspaceSurfaceSubtitleAtom = (surface: WorkspaceSurface): Atom.At
 // issues surface is active *and* there's a selected issue.
 export const issueSelectedReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "issues" && get(selectedIssueAtom) ? null : "Select an issue first."))
 
+export const noOpenIssueReasonAtom = Atom.make((get): string | null => {
+	const surface = get(issueSurfaceReasonAtom)
+	if (surface !== null) return surface
+	const issue = get(selectedIssueAtom)
+	if (!issue) return "Select an issue first."
+	return issue.state === "open" ? null : "Issue is not open."
+})
+
 // Whichever item is currently focused for comment-style operations: issue on
 // the issues surface, PR on the PR surface, null otherwise. Used as a target
 // for modal seeding (labels, new comment) without re-deriving in every command.
-export const selectedCommentSubjectAtom = Atom.make((get) => {
-	const surface = get(workspaceSurfaceAtom)
-	if (surface === "issues") return get(selectedIssueAtom)
-	if (surface === "pullRequests") return get(selectedPullRequestAtom)
-	return null
-})
+export { selectedCommentSubjectAtom }
 
 // Load-more gating: enabled only when we're on the PR surface, there are more
 // pages, and a fetch isn't already in flight.
@@ -110,7 +118,7 @@ export const loadMoreDisabledReasonAtom = Atom.make((get) => {
 	const surface = get(pullRequestSurfaceReasonAtom)
 	if (surface !== null) return surface
 	if (get(isLoadingMorePullRequestsAtom)) return "Already loading more pull requests."
-	if (!get(hasMorePullRequestsAtom)) return "No more pull requests loaded by this view."
+	if (!get(pullRequestLoadMoreSlotAvailableAtom)) return "No more pull requests available in this view."
 	return null
 })
 

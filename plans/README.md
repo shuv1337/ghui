@@ -28,3 +28,8 @@ When a plan ships, leave the file in place and update the **Status** line so we 
 - [`surface-aware-loading.md`](./surface-aware-loading.md) — active-surface loading, progressive hydration, and local API telemetry.
 - [`diff-rendering-performance.md`](./diff-rendering-performance.md) — semantic diff rows, viewport-windowed rendering, and syntax-plus-word-diff highlighting.
 - [`app-tsx-decomposition.md`](./app-tsx-decomposition.md) — carve the 3,000-LOC App.tsx into a thin shell + per-surface modules + capability modules + a data-driven command registry.
+- [`app-shell-deepening.md`](./app-shell-deepening.md) — follow-up: shrink the 1,400-LOC `useAppShell` God-hook into App-shell infrastructure + per-Surface shells, with commands reading atoms via registry.
+- [`item-load-deepening.md`](./item-load-deepening.md) — consolidate the shared PR/Issue load, pagination, cache, and displayed-selection engine.
+- [`open-in-editor.md`](./open-in-editor.md) — open a PR in a configurable editor command (nvim/diffview/octo, code, …) via `e`, with `repoPaths` mapping and TUI suspend/resume.
+- [`pr-runs-view-mockups.md`](./pr-runs-view-mockups.md) — UI mock-ups for the per-PR GitHub Actions runs view.
+- [`github-actions-runs.md`](./github-actions-runs.md) — per-PR workflow runs view (`a`): runs list → jobs/steps/log investigation, as a diff-view-peer PR view mode.

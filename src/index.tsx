@@ -7,6 +7,7 @@ import { appendFile } from "node:fs/promises"
 import { useEffect, useState } from "react"
 import { errorMessage } from "./errors.js"
 import { createSystemThemeReloader, type SystemThemeReloadEvent } from "./systemThemeReload.js"
+import { setTuiSuspender } from "./tuiSuspension.js"
 import { loadStoredSystemThemeAutoReload } from "./themeStore.js"
 import { colors, setSystemThemeColors } from "./ui/colors.js"
 import { LoadingLogoPane } from "./ui/LoadingLogo.js"
@@ -74,6 +75,21 @@ const renderer = await createCliRenderer({
 	onDestroy: () => {
 		process.stdout.write(FOCUS_REPORTING_DISABLE)
 		process.exit(0)
+	},
+})
+
+// Let editor-launch (and any future hand-off) suspend the renderer so an
+// interactive subprocess (nvim, etc.) can own the terminal, then reacquire it.
+setTuiSuspender({
+	suspend: () => {
+		process.stdout.write(FOCUS_REPORTING_DISABLE)
+		renderer.suspend()
+	},
+	resume: () => {
+		renderer.resume()
+		process.stdout.write(FOCUS_REPORTING_ENABLE)
+		process.stdout.write(FULL_SCREEN_REPAINT)
+		renderer.requestRender()
 	},
 })
 

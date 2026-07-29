@@ -1,6 +1,6 @@
 {
 	"name": "@kitlangton/ghui",
-	"version": "0.7.1",
+	"version": "0.9.0",
 	"description": "Terminal UI for GitHub pull requests",
 	"type": "module",
 	"license": "MIT",
@@ -41,10 +41,11 @@
 		"changeset": "npm exec --package @changesets/cli@2.31.0 -- changeset",
 		"changeset:status": "npm exec --package @changesets/cli@2.31.0 -- changeset status",
 		"changeset:version": "npm exec --package @changesets/cli@2.31.0 -- changeset version",
-		"dev": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOTEL_PORT=${GHUI_MOTEL_PORT:-27686} bun --watch src/index.tsx",
+		"dev": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOTEL_PORT=${GHUI_MOTEL_PORT:-27686} GHUI_DEBUG_LOG=${GHUI_DEBUG_LOG:-/tmp/ghui-debug.log} bun --watch src/index.tsx",
 		"dev:mock": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOCK_PR_COUNT=200 GHUI_MOCK_REPO_COUNT=4 bun --watch src/index.tsx",
 		"start": "bun run src/index.tsx",
 		"test": "bun test test",
+		"test:keymap": "bun run --cwd=packages/keymap test",
 		"typecheck": "tsc --noEmit",
 		"lint": "oxlint --tsconfig tsconfig.json src/ test/",
 		"format": "oxfmt src/ test/ dev/",
@@ -58,21 +59,21 @@
 		"packages/*"
 	],
 	"dependencies": {
-		"@effect/atom-react": "4.0.0-beta.59",
-		"@effect/sql-sqlite-bun": "4.0.0-beta.59",
-		"@opentui/core": "0.2.1",
-		"@opentui/react": "0.2.1",
-		"effect": "4.0.0-beta.59",
-		"react": "19.2.5",
+		"@effect/atom-react": "4.0.0-beta.90",
+		"@effect/sql-sqlite-bun": "4.0.0-beta.90",
+		"@opentui/core": "0.4.2",
+		"@opentui/react": "0.4.2",
+		"effect": "4.0.0-beta.90",
+		"react": "19.2.7",
 		"scheduler": "0.27.0"
 	},
 	"devDependencies": {
+		"@effect/language-service": "0.86.2",
 		"@ghui/keymap": "workspace:*",
-		"@effect/language-service": "0.85.1",
-		"@types/bun": "1.3.12",
-		"@types/react": "19.2.14",
-		"oxfmt": "0.47.0",
-		"oxlint": "1.62.0",
-		"typescript": "6.0.2"
+		"@types/bun": "1.3.14",
+		"@types/react": "19.2.17",
+		"oxfmt": "0.56.0",
+		"oxlint": "1.71.0",
+		"typescript": "6.0.3"
 	}
 }

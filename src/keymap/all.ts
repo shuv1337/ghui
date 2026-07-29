@@ -15,6 +15,7 @@ import { listNavKeymap, type ListNavCtx } from "./listNav.ts"
 import { mergeModalKeymap, type MergeModalCtx } from "./mergeModal.ts"
 import { openRepositoryModalKeymap, type OpenRepositoryModalCtx } from "./openRepositoryModal.ts"
 import { pullRequestStateModalKeymap, type PullRequestStateModalCtx } from "./pullRequestStateModal.ts"
+import { runsViewKeymap, type RunsViewCtx } from "./runsView.ts"
 import { submitReviewModalKeymap, type SubmitReviewModalCtx } from "./submitReviewModal.ts"
 import { themeModalKeymap, type ThemeModalCtx } from "./themeModal.ts"
 
@@ -35,6 +36,7 @@ export interface AppCtx {
 	readonly commandPaletteActive: boolean
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
+	readonly runsFullView: boolean
 	readonly detailFullView: boolean
 	readonly commentsViewActive: boolean
 
@@ -58,6 +60,7 @@ export interface AppCtx {
 	readonly commandPalette: CommandPaletteCtx
 	readonly filterModeCtx: FilterModeCtx
 	readonly diff: DiffViewCtx
+	readonly runs: RunsViewCtx
 	readonly detail: DetailViewCtx
 	readonly commentsView: CommentsViewCtx
 	readonly listNav: ListNavCtx
@@ -84,7 +87,7 @@ const modalActive = (a: AppCtx): boolean =>
 	a.deleteCommentModalActive ||
 	a.commandPaletteActive
 
-const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.detailFullView && !a.commentsViewActive
+const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.runsFullView && !a.detailFullView && !a.commentsViewActive
 
 export const appKeymap = App(
 	// Always-on: command palette opener
@@ -124,6 +127,7 @@ export const appKeymap = App(
 
 	// Full-view layers (only when no modal is on top)
 	diffViewKeymap.scope((a) => a.diffFullView && !modalActive(a) && a.diff),
+	runsViewKeymap.scope((a) => a.runsFullView && !modalActive(a) && a.runs),
 	detailViewKeymap.scope((a) => a.detailFullView && !modalActive(a) && a.detail),
 	commentsViewKeymap.scope((a) => a.commentsViewActive && !modalActive(a) && a.commentsView),
 

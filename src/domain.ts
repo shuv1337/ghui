@@ -159,6 +159,59 @@ export interface PullRequestItem {
 	readonly url: string
 }
 
+// === Workflow runs (GitHub Actions) ===
+//
+// Modeled after `gh run list` / `gh run view --json jobs`. A WorkflowRun is one
+// run of a workflow on a commit; jobs carry steps. Scoped per-PR by head SHA in
+// the runs view.
+
+export const runStatuses = ["queued", "in_progress", "completed"] as const
+export type RunStatus = (typeof runStatuses)[number]
+
+export const runConclusions = ["success", "failure", "cancelled", "skipped", "neutral", "timed_out", "action_required", "stale"] as const
+export type RunConclusion = (typeof runConclusions)[number] | null
+
+export interface RunStep {
+	readonly number: number
+	readonly name: string
+	readonly status: RunStatus
+	readonly conclusion: RunConclusion
+	readonly startedAt: Date | null
+	readonly completedAt: Date | null
+}
+
+export interface RunJob {
+	readonly id: number
+	readonly name: string
+	readonly status: RunStatus
+	readonly conclusion: RunConclusion
+	readonly startedAt: Date | null
+	readonly completedAt: Date | null
+	readonly url: string
+	readonly steps: readonly RunStep[]
+}
+
+export interface WorkflowRun {
+	readonly id: number
+	readonly number: number
+	readonly attempt: number
+	readonly workflowName: string
+	readonly displayTitle: string
+	readonly event: string
+	readonly headBranch: string
+	readonly headSha: string
+	readonly status: RunStatus
+	readonly conclusion: RunConclusion
+	readonly url: string
+	readonly createdAt: Date
+	readonly startedAt: Date | null
+	readonly updatedAt: Date | null
+}
+
+export interface WorkflowRunDetails extends WorkflowRun {
+	readonly jobs: readonly RunJob[]
+}
+
 export interface RepositoryDetails {
 	readonly repository: string
 	readonly description: string | null

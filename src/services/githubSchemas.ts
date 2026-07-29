@@ -29,7 +29,7 @@ export const RawCheckContextSchema = Schema.Union([
 	}),
 ]).pipe(Schema.toTaggedUnion("__typename"))
 
-const RawAuthorSchema = Schema.Struct({ login: Schema.String })
+const RawAuthorSchema = Schema.NullOr(Schema.Struct({ login: Schema.String }))
 const RawRepositorySchema = Schema.Struct({
 	nameWithOwner: Schema.String,
 	defaultBranchRef: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: Schema.String }))),
@@ -177,6 +177,60 @@ export const RepositoryDetailsResponseSchema = Schema.Struct({
 		),
 	}),
 })
+
+// ---------------------------------------------------------------------------
+// Workflow run schemas (`gh run list` / `gh run view --json jobs`)
+// ---------------------------------------------------------------------------
+
+export const RawRunStepSchema = Schema.Struct({
+	number: Schema.Number,
+	name: Schema.String,
+	status: Schema.String,
+	conclusion: NullableString,
+	startedAt: OptionalNullableString,
+	completedAt: OptionalNullableString,
+})
+
+export const RawRunJobSchema = Schema.Struct({
+	databaseId: Schema.Number,
+	name: Schema.String,
+	status: Schema.String,
+	conclusion: NullableString,
+	startedAt: OptionalNullableString,
+	completedAt: OptionalNullableString,
+	url: OptionalNullableString,
+	steps: Schema.optionalKey(Schema.NullOr(Schema.Array(RawRunStepSchema))),
+})
+
+export const RawWorkflowRunSchema = Schema.Struct({
+	databaseId: Schema.Number,
+	number: Schema.Number,
+	attempt: OptionalNullableNumber,
+	workflowName: OptionalNullableString,
+	name: OptionalNullableString,
+	displayTitle: OptionalNullableString,
+	event: OptionalNullableString,
+	headBranch: OptionalNullableString,
+	headSha: OptionalNullableString,
+	status: Schema.String,
+	conclusion: NullableString,
+	url: OptionalNullableString,
+	createdAt: Schema.String,
+	startedAt: OptionalNullableString,
+	updatedAt: OptionalNullableString,
+})
+
+export const WorkflowRunListSchema = Schema.Array(RawWorkflowRunSchema)
+
+export const WorkflowRunDetailsSchema = Schema.Struct({
+	...RawWorkflowRunSchema.fields,
+	jobs: Schema.optionalKey(Schema.NullOr(Schema.Array(RawRunJobSchema))),
+})
+
+export type RawWorkflowRun = typeof RawWorkflowRunSchema.Type
+export type RawRunStep = typeof RawRunStepSchema.Type
+export type RawRunJob = typeof RawRunJobSchema.Type
+export type RawWorkflowRunDetails = typeof WorkflowRunDetailsSchema.Type
 
 // ---------------------------------------------------------------------------
 // Comment / file schemas (REST shapes)
