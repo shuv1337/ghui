@@ -2,7 +2,17 @@ import { Effect } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../../config.js"
-import type { LoadStatus, PullRequestItem, PullRequestLabel, PullRequestMergeAction, PullRequestMergeMethod, RepositoryDetails, RepositoryMergeMethods } from "../../domain.js"
+import type {
+	CreatePullRequestInput,
+	EditPullRequestInput,
+	LoadStatus,
+	PullRequestItem,
+	PullRequestLabel,
+	PullRequestMergeAction,
+	PullRequestMergeMethod,
+	RepositoryDetails,
+	RepositoryMergeMethods,
+} from "../../domain.js"
 import { devLog } from "../../devLog.js"
 import { itemQueryCacheKeyHasRepository, type ItemListInput, searchQualifier } from "../../item.js"
 import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
@@ -20,6 +30,8 @@ import { filterByScore, pullRequestFilterScore } from "../filter/scoring.js"
 import { initialRetryProgress, RetryProgress } from "../FooterHints.js"
 import { selectedIndexAtom } from "../listSelection/atoms.js"
 import { groupBy } from "../pullRequests.js"
+import type { SurfaceViewConfig } from "../../configStore.js"
+import { applySurfaceView } from "../../settings/viewConfig.js"
 
 const MAX_REPOSITORY_CACHE_ENTRIES = 8
 
@@ -50,6 +62,7 @@ const trimQueueLoadCache = (cache: Partial<Record<string, PullRequestLoad>>) => 
 
 // === View / queue state atoms ===
 export const retryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).pipe(Atom.keepAlive)
+export const pullRequestSurfaceViewAtom = Atom.make<SurfaceViewConfig>({}).pipe(Atom.keepAlive)
 export const activeViewAtom = Atom.make<PullRequestView>(initialPullRequestView(detectedRepository)).pipe(Atom.keepAlive)
 export const queueLoadCacheAtom = Atom.make<Partial<Record<string, PullRequestLoad>>>({}).pipe(Atom.keepAlive)
 export const queueSelectionAtom = Atom.make<Partial<Record<string, number>>>({}).pipe(Atom.keepAlive)
@@ -216,6 +229,15 @@ export const closePullRequestAtom = githubRuntime.fn<{ readonly repository: stri
 	GitHubService.use((github) => github.closePullRequest(input.repository, input.number)),
 )
 
+export const createPullRequestAtom = githubRuntime.fn<CreatePullRequestInput>()((input) => GitHubService.use((github) => github.createPullRequest(input)))
+export const editPullRequestAtom = githubRuntime.fn<EditPullRequestInput>()((input) => GitHubService.use((github) => github.editPullRequest(input)))
+export const reopenPullRequestAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.reopenPullRequest(input.repository, input.number)),
+)
+export const approvePullRequestAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number; readonly body?: string }>()((input) =>
+	GitHubService.use((github) => github.approvePullRequest(input.repository, input.number, input.body)),
+)
+
 // === Derived atoms (PR list pipeline) ===
 // Pure resolver for the current view's load: prefer the in-memory cache for
 // the active view; fall back to the latest resolved fetch only if its view
@@ -315,7 +337,11 @@ export const filteredPullRequestsAtom = Atom.make((get) => {
 	// search qualifier; no client-side author filter is needed here.
 	const pullRequests = get(displayedPullRequestsAtom)
 	const query = get(effectiveFilterQueryAtom)
-	return filterByScore(pullRequests, query, pullRequestFilterScore, (pullRequest) => pullRequest.updatedAt.getTime())
+	return applySurfaceView(
+		filterByScore(pullRequests, query, pullRequestFilterScore, (pullRequest) => pullRequest.updatedAt.getTime()),
+		get(pullRequestSurfaceViewAtom),
+		"pullRequests",
+	)
 })
 
 export const visibleRepoOrderAtom = Atom.make((get) => {

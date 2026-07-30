@@ -1,0 +1,82 @@
+{
+  "stage": "interview",
+  "title": "GitHub feature parity for ghui",
+  "goalSlug": "github-feature-parity",
+  "questions": [
+    {
+      "id": "execution-autonomy",
+      "prompt": "How autonomously should /goal execute the parity milestones?",
+      "description": "The plan already defines milestone gates. This decides when execution should pause for your input.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Execute autonomously through all milestones, stopping only for missing external access, destructive live-test approval, or a material scope decision not settled by the facts.",
+      "recommendedOptionIds": [
+        "autonomous"
+      ],
+      "options": [
+        {
+          "id": "autonomous",
+          "label": "Autonomous with safety stops"
+        },
+        {
+          "id": "milestone-checkpoints",
+          "label": "Pause after every milestone"
+        },
+        {
+          "id": "architecture-checkpoints",
+          "label": "Pause after M0 and M1"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "live-validation-authority",
+      "prompt": "What live GitHub validation resources may execution assume?",
+      "description": "Full parity validation needs a disposable repository and, for notification behavior, a dedicated test identity or equivalent controlled setup. Mutations must remain confined to named fixtures.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Use a named disposable GitHub repository plus a dedicated test identity where needed; allow reversible fixture mutations automatically, but require explicit approval before destructive or externally visible live actions.",
+      "recommendedOptionIds": [
+        "repo-and-identity"
+      ],
+      "options": [
+        {
+          "id": "repo-and-identity",
+          "label": "Repo and test identity"
+        },
+        {
+          "id": "repo-only",
+          "label": "Disposable repo only"
+        },
+        {
+          "id": "local-only",
+          "label": "Mocks and local tests only"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "release-compatibility",
+      "prompt": "What compatibility and release boundary should each milestone maintain?",
+      "description": "The work changes configuration, cache schemas, commands, and packaged binaries across several independently releasable slices.",
+      "answerMode": "single-custom",
+      "recommendedAnswer": "Keep every milestone independently releasable: preserve existing config and cache data through additive/versioned migrations, add a changeset for user-facing behavior, and validate source, standalone binary, npm, and Homebrew paths at the final release gate.",
+      "recommendedOptionIds": [
+        "releasable"
+      ],
+      "options": [
+        {
+          "id": "releasable",
+          "label": "Releasable milestones"
+        },
+        {
+          "id": "single-release",
+          "label": "One final release"
+        },
+        {
+          "id": "breaking-allowed",
+          "label": "Breaking migrations allowed"
+        }
+      ],
+      "required": true
+    }
+  ]
+}

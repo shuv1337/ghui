@@ -80,6 +80,8 @@ export const IssueList = ({
 	loadingIndicator = "-",
 	loadMoreSelected = false,
 	onSelectLoadMore,
+	bulkSelectedUrls = [],
+	onToggleIssueSelection,
 }: {
 	issues: readonly IssueItem[]
 	selectedIndex: number
@@ -97,6 +99,8 @@ export const IssueList = ({
 	loadingIndicator?: string
 	loadMoreSelected?: boolean
 	onSelectLoadMore?: () => void
+	bulkSelectedUrls?: readonly string[]
+	onToggleIssueSelection?: (url: string) => void
 }) => {
 	const { isHovered, onHoverChange } = useHoverState<number>()
 	const ageWidth = Math.max(4, ...issues.map((issue) => issueActivityAgeText(issue).length + 1))
@@ -133,6 +137,7 @@ export const IssueList = ({
 				}
 				for (const { issue, index } of groupIssues) {
 					const selected = index === selectedIndex
+					const bulkSelected = bulkSelectedUrls.includes(issue.url)
 					const closed = issue.state === "closed"
 					const ageText = issueActivityAgeText(issue)
 					const numberText = `#${issue.number}`
@@ -147,12 +152,13 @@ export const IssueList = ({
 							selected={selected}
 							hovered={isHovered(index)}
 							onSelect={() => onSelectIssue(index)}
+							{...(onToggleIssueSelection ? { onToggleSelection: () => onToggleIssueSelection(issue.url) } : {})}
 							onHoverChange={onHoverChange(index)}
 						>
 							{(rowBg) => (
 								<>
 									<TextLine width={contentWidth} fg={titleFg} bg={rowBg}>
-										<span fg={iconFg}>{closed ? ISSUE_CLOSED_ICON : ISSUE_ICON}</span>
+										<span fg={bulkSelected ? colors.count : iconFg}>{bulkSelected ? "◆" : closed ? ISSUE_CLOSED_ICON : ISSUE_ICON}</span>
 										<span> </span>
 										<span fg={numberFg} attributes={selected ? TextAttributes.BOLD : 0}>
 											{numberText}

@@ -5,6 +5,7 @@ import type { PullRequestDiffState } from "../ui/diff.js"
 import type { DetailHydrationState } from "../ui/pullRequests/useDetailHydration.js"
 import { SPINNER_FRAMES } from "../ui/spinner.js"
 import { useSpinnerFrame } from "../ui/useSpinnerFrame.js"
+import type { WorkspaceSurface } from "../workspaceSurfaces.js"
 
 interface PullRequestLoadShape {
 	readonly fetchedAt?: Date | null
@@ -21,10 +22,12 @@ export interface UseLoadingStatusInput {
 	readonly pullRequestLoad: PullRequestLoadShape | null
 	readonly pullRequestStatus: "loading" | "ready" | "error"
 	readonly issuesStatus: "loading" | "ready" | "error"
+	readonly releaseStatus: "loading" | "ready" | "error"
+	readonly notificationStatus: "loading" | "ready" | "error"
 	readonly isLoadingMorePullRequests: boolean
 	readonly issueFetchInFlight: boolean
 	readonly isLoadingMoreIssues: boolean
-	readonly activeWorkspaceSurface: "pullRequests" | "issues" | "repos"
+	readonly activeWorkspaceSurface: WorkspaceSurface
 	readonly selectedCommentsStatus: "idle" | "loading" | "ready" | "error"
 	readonly selectedDiffState: PullRequestDiffState | undefined
 	readonly labelModal: LabelModalState
@@ -64,6 +67,8 @@ export const useLoadingStatus = ({
 	pullRequestLoad,
 	pullRequestStatus,
 	issuesStatus,
+	releaseStatus,
+	notificationStatus,
 	isLoadingMorePullRequests,
 	issueFetchInFlight,
 	isLoadingMoreIssues,
@@ -87,12 +92,16 @@ export const useLoadingStatus = ({
 	const isRefreshingPullRequests = pullRequestResult.waiting && pullRequestLoad !== null
 	const isActiveSurfaceLoading =
 		(activeWorkspaceSurface === "pullRequests" && (pullRequestStatus === "loading" || isRefreshingPullRequests || isHydratingPullRequestDetails || isLoadingMorePullRequests)) ||
-		(activeWorkspaceSurface === "issues" && (issuesStatus === "loading" || issueFetchInFlight || isLoadingMoreIssues))
+		(activeWorkspaceSurface === "issues" && (issuesStatus === "loading" || issueFetchInFlight || isLoadingMoreIssues)) ||
+		(activeWorkspaceSurface === "releases" && releaseStatus === "loading") ||
+		(activeWorkspaceSurface === "notifications" && notificationStatus === "loading")
 	const hasActiveLoadingIndicator =
 		pullRequestResult.waiting ||
 		isHydratingPullRequestDetails ||
 		isLoadingMorePullRequests ||
 		(activeWorkspaceSurface === "issues" && (issueFetchInFlight || isLoadingMoreIssues)) ||
+		(activeWorkspaceSurface === "releases" && releaseStatus === "loading") ||
+		(activeWorkspaceSurface === "notifications" && notificationStatus === "loading") ||
 		selectedCommentsStatus === "loading" ||
 		labelModal.loading ||
 		closeModal.running ||

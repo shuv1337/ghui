@@ -363,6 +363,36 @@ export const stackedDiffFileIndexAtLine = (stackedFiles: readonly StackedDiffFil
 
 export const stackedDiffFileAtLine = (stackedFiles: readonly StackedDiffFilePatch[], line: number) => stackedFiles[stackedDiffFileIndexAtLine(stackedFiles, line)]
 
+export const stackedDiffSectionHeight = (file: StackedDiffFilePatch) => (file.index > 0 ? 1 : 0) + 2 + file.diffHeight
+
+/**
+ * File-level virtualization contract for the diff pane. The halo keeps one
+ * viewport above and below mounted, while selected comment anchors force
+ * their file to stay alive even when navigation jumps offscreen. Placeholder
+ * sections use stackedDiffSectionHeight(), so scroll geometry never changes
+ * as renderables mount and unmount.
+ */
+export const windowedStackedDiffFileIndexes = (
+	files: readonly StackedDiffFilePatch[],
+	scrollTop: number,
+	viewportHeight: number,
+	selectedFileIndex: number | null = null,
+): ReadonlySet<number> => {
+	const top = Math.max(0, Math.floor(scrollTop))
+	const height = Math.max(1, Math.floor(viewportHeight))
+	const haloStart = Math.max(0, top - height)
+	const haloEnd = top + height * 2
+	const indexes = new Set<number>()
+	for (const file of files) {
+		const separatorBefore = file.index > 0 ? 1 : 0
+		const sectionStart = file.headerLine - separatorBefore
+		const sectionEnd = file.diffStartLine + file.diffHeight
+		if (sectionEnd >= haloStart && sectionStart <= haloEnd) indexes.add(file.index)
+	}
+	if (selectedFileIndex !== null) indexes.add(selectedFileIndex)
+	return indexes
+}
+
 export const diffStatText = (pullRequest: PullRequestItem, loadingIndicator: string) => {
 	if (!pullRequest.detailLoaded) return `${loadingIndicator} Loading details`
 	const files = pullRequest.changedFiles === 1 ? "1 file" : `${pullRequest.changedFiles} files`

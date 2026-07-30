@@ -38,7 +38,7 @@ export const CommentModal = ({
 }) => {
 	const textareaRef = useRef<TextareaRenderable | null>(null)
 	const { contentWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
-	const title = state.target.kind === "edit" ? "Edit comment" : "Comment"
+	const title = state.target.kind === "edit" ? "Edit comment" : state.contentKind === "suggestion" ? "Suggestion" : "Comment"
 	const editorHeight = Math.max(1, bodyHeight - (state.error ? 1 : 0))
 	const editorKey = commentModalEditorKey(state)
 	const syncTextarea = () => {
@@ -60,14 +60,16 @@ export const CommentModal = ({
 			width={modalWidth}
 			height={modalHeight}
 			title={title}
-			headerRight={{ text: "enter save" }}
+			headerRight={{ text: state.target.kind === "diff" ? `${state.submitMode} · enter save` : "enter save" }}
 			subtitle={<PlainLine text={fitCell(anchorLabel, contentWidth)} fg={colors.muted} />}
 			bodyPadding={1}
 			footer={
 				<HintRow
 					items={[
-						{ key: "enter", label: "save" },
+						{ key: "enter", label: state.submitMode === "queue" ? "queue" : "post" },
 						{ key: "shift-enter", label: "newline" },
+						{ key: "ctrl-q", label: "post/queue" },
+						{ key: "ctrl-g", label: "comment/suggest" },
 						{ key: "esc", label: "cancel" },
 					]}
 				/>
@@ -80,7 +82,7 @@ export const CommentModal = ({
 				width={contentWidth}
 				height={editorHeight}
 				initialValue={state.body}
-				placeholder="Write a comment..."
+				placeholder={state.contentKind === "suggestion" ? "Write replacement lines..." : "Write a comment..."}
 				focused
 				wrapMode="word"
 				textColor={colors.text}

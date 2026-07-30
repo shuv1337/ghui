@@ -1,5 +1,5 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
-import { useMemo } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import type { IssueItem, PullRequestItem, RepositoryDetails } from "../../domain.js"
 import { repositoryFilterScore } from "../../ui/filter/scoring.js"
 import { useRepositoryDetails } from "../../ui/pullRequests/useRepositoryDetails.js"
@@ -9,6 +9,8 @@ import { buildRepositoryItems, type CatalogEntry } from "../../workspace/reposit
 import { favoriteRepositoriesAtom, recentRepositoriesAtom, repoRollupAtom, selectedRepositoryIndexAtom } from "../../workspace/atoms.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
 import type { RepoRollupRow } from "../../services/CacheService.js"
+import { useSurfaceView } from "../../settings/useSurfaceView.js"
+import { applySurfaceView } from "../../settings/viewConfig.js"
 
 // Match @effect/atom-react's polymorphic setter: accepts either a value
 // or an updater. Both forms are used across consumers (preferences
@@ -57,11 +59,13 @@ export interface RepoSurfaceShell {
 export const useRepoSurface = (input: UseRepoSurfaceInput): RepoSurfaceShell => {
 	const { pullRequests, allIssues, visibleFilterText, activeWorkspaceSurface, detectedRepository, mockRepositoryCatalog, flashNotice } = input
 
-	const [selectedRepositoryIndex, setSelectedRepositoryIndex] = useAtom(selectedRepositoryIndexAtom)
+	const [selectedRepositoryIndex, setStoredSelectedRepositoryIndex] = useAtom(selectedRepositoryIndexAtom)
 	const [favoriteRepositories, setFavoriteRepositories] = useAtom(favoriteRepositoriesAtom)
 	const [recentRepositories, setRecentRepositories] = useAtom(recentRepositoriesAtom)
 	const repoRollup = useAtomValue(repoRollupAtom)
 	const setRepoRollup = useAtomSet(repoRollupAtom)
+	const { view } = useSurfaceView("repos")
+	const selectedRepositoryRef = useRef<string | null>(null)
 
 	const allRepositoryItems = useMemo(
 		(): readonly RepositoryListItem[] =>
@@ -77,11 +81,35 @@ export const useRepoSurface = (input: UseRepoSurfaceInput): RepoSurfaceShell => 
 		[favoriteRepositories, recentRepositories, pullRequests, allIssues, repoRollup, detectedRepository, mockRepositoryCatalog],
 	)
 	const repositoryItems = useMemo(
-		() => (activeWorkspaceSurface === "repos" ? allRepositoryItems.filter((repository) => repositoryFilterScore(repository, visibleFilterText) !== null) : allRepositoryItems),
-		[activeWorkspaceSurface, allRepositoryItems, visibleFilterText],
+		() =>
+			applySurfaceView(
+				activeWorkspaceSurface === "repos" ? allRepositoryItems.filter((repository) => repositoryFilterScore(repository, visibleFilterText) !== null) : allRepositoryItems,
+				view,
+				"repos",
+			),
+		[activeWorkspaceSurface, allRepositoryItems, visibleFilterText, view],
 	)
 	const selectedRepositoryItem = repositoryItems[Math.max(0, Math.min(selectedRepositoryIndex, repositoryItems.length - 1))] ?? null
 	const selectedRepositoryDetails = useRepositoryDetails(selectedRepositoryItem?.repository ?? null)
+	const setSelectedRepositoryIndex = useCallback(
+		(next: number | ((current: number) => number)) =>
+			setStoredSelectedRepositoryIndex((current) => {
+				const index = typeof next === "function" ? next(current) : next
+				selectedRepositoryRef.current = repositoryItems[index]?.repository ?? null
+				return index
+			}),
+		[repositoryItems, setStoredSelectedRepositoryIndex],
+	)
+
+	useEffect(() => {
+		setStoredSelectedRepositoryIndex((current) => {
+			const selectedRepository = selectedRepositoryRef.current
+			const preserved = selectedRepository ? repositoryItems.findIndex((item) => item.repository === selectedRepository) : -1
+			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(repositoryItems.length - 1, current))
+			selectedRepositoryRef.current = repositoryItems[next]?.repository ?? null
+			return next
+		})
+	}, [repositoryItems, setStoredSelectedRepositoryIndex])
 
 	useClampedIndex(repositoryItems.length, setSelectedRepositoryIndex)
 

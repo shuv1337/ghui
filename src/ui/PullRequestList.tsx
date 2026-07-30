@@ -20,11 +20,12 @@ export type PullRequestListRow =
 const GROUP_ICON = "◆"
 
 const getRowLayout = (contentWidth: number, numberWidth: number, ageWidth: number) => {
+	const bulkWidth = 2
 	const reviewWidth = 1
 	const checkWidth = 2
-	const fixedWidth = reviewWidth + 1 + numberWidth + 1 + checkWidth + ageWidth
+	const fixedWidth = bulkWidth + reviewWidth + 1 + numberWidth + 1 + checkWidth + ageWidth
 	const titleWidth = Math.max(8, contentWidth - fixedWidth)
-	return { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth }
+	return { bulkWidth, reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth }
 }
 
 const groupNumberWidth = (pullRequests: readonly PullRequestItem[]) => {
@@ -116,7 +117,9 @@ const PullRequestRow = ({
 	ageColWidth,
 	filterText,
 	compact,
+	bulkSelected,
 	onSelect,
+	onToggleSelection,
 	onHoverChange,
 }: {
 	pullRequest: PullRequestItem
@@ -127,15 +130,17 @@ const PullRequestRow = ({
 	ageColWidth: number
 	filterText: string
 	compact: boolean
+	bulkSelected: boolean
 	onSelect: () => void
+	onToggleSelection?: () => void
 	onHoverChange: (hovered: boolean) => void
 }) => {
 	const ageText = `${daysOpen(pullRequest.updatedAt)}d`
 	const title = pullRequest.title.trim()
-	const { reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth } = getRowLayout(contentWidth, numWidth, ageColWidth)
-	const rowWidth = reviewWidth + 1 + numberWidth + 1 + titleWidth + checkWidth + ageWidth
+	const { bulkWidth, reviewWidth, checkWidth, ageWidth, numberWidth, titleWidth } = getRowLayout(contentWidth, numWidth, ageColWidth)
+	const rowWidth = bulkWidth + reviewWidth + 1 + numberWidth + 1 + titleWidth + checkWidth + ageWidth
 	const fillerWidth = Math.max(0, contentWidth - rowWidth)
-	const metaIndentWidth = reviewWidth + 1
+	const metaIndentWidth = bulkWidth + reviewWidth + 1
 	const metaWidth = Math.max(8, contentWidth - metaIndentWidth)
 	const branchText =
 		pullRequest.headRefName === pullRequest.baseRefName
@@ -148,10 +153,18 @@ const PullRequestRow = ({
 	const display = pullRequestRowDisplay(pullRequest, selected)
 
 	return (
-		<SelectableRow width={contentWidth} selected={selected} hovered={hovered} onSelect={onSelect} onHoverChange={onHoverChange}>
+		<SelectableRow
+			width={contentWidth}
+			selected={selected}
+			hovered={hovered}
+			onSelect={onSelect}
+			{...(onToggleSelection ? { onToggleSelection } : {})}
+			onHoverChange={onHoverChange}
+		>
 			{(rowBg) => (
 				<>
 					<TextLine width={contentWidth} fg={display.rowFg} bg={rowBg}>
+						<span fg={bulkSelected ? colors.count : colors.muted}>{fitCell(bulkSelected ? "◆" : "", bulkWidth)}</span>
 						<span fg={display.indicatorFg}>{fitCell(reviewIcon(pullRequest), reviewWidth)}</span>
 						<span> </span>
 						<span fg={display.numberFg}>
@@ -200,6 +213,8 @@ export const PullRequestList = ({
 	showTitle = true,
 	showRepositoryGroups = true,
 	compact = false,
+	bulkSelectedUrls = [],
+	onTogglePullRequestSelection,
 }: {
 	groups: PullRequestGroups
 	selectedUrl: string | null
@@ -217,6 +232,8 @@ export const PullRequestList = ({
 	showTitle?: boolean
 	showRepositoryGroups?: boolean
 	compact?: boolean
+	bulkSelectedUrls?: readonly string[]
+	onTogglePullRequestSelection?: (url: string) => void
 }) => {
 	const rows = buildPullRequestListRows({
 		groups,
@@ -262,7 +279,9 @@ export const PullRequestList = ({
 						ageColWidth={row.ageWidth}
 						filterText={filterText}
 						compact={row.compact}
+						bulkSelected={bulkSelectedUrls.includes(pullRequestUrl)}
 						onSelect={() => onSelectPullRequest(pullRequestUrl)}
+						{...(onTogglePullRequestSelection ? { onToggleSelection: () => onTogglePullRequestSelection(pullRequestUrl) } : {})}
 						onHoverChange={onHoverChange(pullRequestUrl)}
 					/>
 				)

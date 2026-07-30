@@ -1,7 +1,21 @@
 import { useKeyboard } from "@opentui/react"
 import type { WorkspaceSurface } from "../workspaceSurfaces.js"
 import { type CommentEditorValue, insertText } from "./commentEditor.js"
-import type { ChangedFilesModalState, CommandPaletteState, LabelModalState, OpenRepositoryModalState, SubmitReviewModalState, ThemeModalState } from "./modals.js"
+import type {
+	ChangedFilesModalState,
+	ArtifactDownloadModalState,
+	BulkEditorModalState,
+	CommandPaletteState,
+	ItemEditorModalState,
+	MetadataSelectorModalState,
+	LabelModalState,
+	OpenRepositoryModalState,
+	ReleaseEditorModalState,
+	SubmitReviewModalState,
+	ThemeModalState,
+	WorkflowDispatchModalState,
+	ResourceEditorModalState,
+} from "./modals.js"
 import { editSingleLineInput, isSingleLineInputKey, printableKeyText } from "./singleLineInput.js"
 
 export interface UseTextInputDispatcherInput {
@@ -19,10 +33,25 @@ export interface UseTextInputDispatcherInput {
 	readonly detailFullView: boolean
 	readonly diffFullView: boolean
 	readonly commentsViewActive: boolean
+	readonly releaseEditorModalActive: boolean
+	readonly itemEditorModalActive: boolean
+	readonly metadataSelectorModalActive: boolean
+	readonly bulkEditorModalActive: boolean
+	readonly workflowDispatchModalActive: boolean
+	readonly artifactDownloadModalActive: boolean
+	readonly resourceEditorModalActive: boolean
+	readonly deleteResourceModalActive: boolean
 
 	// Modal sub-state needed for routing
 	readonly themeModal: ThemeModalState
 	readonly submitReviewModal: SubmitReviewModalState
+	readonly releaseEditorModal: ReleaseEditorModalState
+	readonly itemEditorModal: ItemEditorModalState
+	readonly metadataSelectorModal: MetadataSelectorModalState
+	readonly bulkEditorModal: BulkEditorModalState
+	readonly workflowDispatchModal: WorkflowDispatchModalState
+	readonly artifactDownloadModal: ArtifactDownloadModalState
+	readonly resourceEditorModal: ResourceEditorModalState
 
 	// Workspace surface tabs (for 1/2/3 numeric shortcuts)
 	readonly workspaceTabSurfaces: readonly WorkspaceSurface[]
@@ -35,8 +64,16 @@ export interface UseTextInputDispatcherInput {
 	readonly setChangedFilesModal: (next: ChangedFilesModalState | ((prev: ChangedFilesModalState) => ChangedFilesModalState)) => void
 	readonly setLabelModal: (next: LabelModalState | ((prev: LabelModalState) => LabelModalState)) => void
 	readonly setFilterDraft: (next: string | ((prev: string) => string)) => void
+	readonly setReleaseEditorModal: (next: ReleaseEditorModalState | ((prev: ReleaseEditorModalState) => ReleaseEditorModalState)) => void
+	readonly setItemEditorModal: (next: ItemEditorModalState | ((prev: ItemEditorModalState) => ItemEditorModalState)) => void
+	readonly setMetadataSelectorModal: (next: MetadataSelectorModalState | ((prev: MetadataSelectorModalState) => MetadataSelectorModalState)) => void
+	readonly setBulkEditorModal: (next: BulkEditorModalState | ((prev: BulkEditorModalState) => BulkEditorModalState)) => void
+	readonly setWorkflowDispatchModal: (next: WorkflowDispatchModalState | ((prev: WorkflowDispatchModalState) => WorkflowDispatchModalState)) => void
+	readonly setArtifactDownloadModal: (next: ArtifactDownloadModalState | ((prev: ArtifactDownloadModalState) => ArtifactDownloadModalState)) => void
+	readonly setResourceEditorModal: (next: ResourceEditorModalState | ((prev: ResourceEditorModalState) => ResourceEditorModalState)) => void
 	readonly editThemeQuery: (transform: (query: string) => string) => void
 	readonly editSubmitReview: (transform: (state: CommentEditorValue) => CommentEditorValue) => void
+	readonly closeResourceModal: () => void
 }
 
 /**
@@ -57,6 +94,11 @@ export interface UseTextInputDispatcherInput {
 export const useTextInputDispatcher = (input: UseTextInputDispatcherInput): void => {
 	useKeyboard((key) => {
 		if (input.disabled) return
+
+		if ((input.resourceEditorModalActive || input.deleteResourceModalActive) && key.name === "escape") {
+			input.closeResourceModal()
+			return
+		}
 
 		if (input.commandPaletteActive) {
 			if (isSingleLineInputKey(key)) {
@@ -79,20 +121,99 @@ export const useTextInputDispatcher = (input: UseTextInputDispatcherInput): void
 			return
 		}
 
-		// Numeric tab shortcuts (1/2/3) — only active in list mode (no modal,
+		if (input.workflowDispatchModalActive) {
+			if (input.workflowDispatchModal.running || input.workflowDispatchModal.loadingInputs || !isSingleLineInputKey(key)) return
+			input.setWorkflowDispatchModal((current) => {
+				if (current.focusIndex === 1) {
+					const ref = editSingleLineInput(current.ref, key) ?? current.ref
+					return ref === current.ref ? current : { ...current, ref, error: null }
+				}
+				const field = current.inputs[current.focusIndex - 2]
+				if (!field || field.type === "boolean" || field.type === "choice") return current
+				const previous = String(current.values[field.name] ?? field.defaultValue ?? "")
+				const value = editSingleLineInput(previous, key) ?? previous
+				return value === previous ? current : { ...current, values: { ...current.values, [field.name]: value }, error: null }
+			})
+			return
+		}
+
+		if (input.artifactDownloadModalActive) {
+			if (input.artifactDownloadModal.running || input.artifactDownloadModal.focus !== "destination" || !isSingleLineInputKey(key)) return
+			input.setArtifactDownloadModal((current) => {
+				const destination = editSingleLineInput(current.destination, key) ?? current.destination
+				return destination === current.destination ? current : { ...current, destination, error: null }
+			})
+			return
+		}
+
+		if (input.itemEditorModalActive) {
+			if (input.itemEditorModal.running || input.itemEditorModal.focus === "draft") return
+			if (isSingleLineInputKey(key)) {
+				input.setItemEditorModal((current) => {
+					const field = current.focus as Exclude<ItemEditorModalState["focus"], "draft">
+					const previous = current[field]
+					if (typeof previous !== "string") return current
+					const value = editSingleLineInput(previous, key) ?? previous
+					return value === previous ? current : { ...current, [field]: value, error: null }
+				})
+			}
+			return
+		}
+
+		if (input.metadataSelectorModalActive) {
+			if (isSingleLineInputKey(key)) {
+				input.setMetadataSelectorModal((current) => ({
+					...current,
+					query: editSingleLineInput(current.query, key) ?? current.query,
+					selectedIndex: 0,
+				}))
+			}
+			return
+		}
+
+		if (input.bulkEditorModalActive) {
+			if (input.bulkEditorModal.running || input.bulkEditorModal.focus !== "value") return
+			if (isSingleLineInputKey(key)) {
+				input.setBulkEditorModal((current) => ({ ...current, value: editSingleLineInput(current.value, key) ?? current.value, error: null }))
+			}
+			return
+		}
+
+		if (input.releaseEditorModalActive) {
+			if (input.releaseEditorModal.running) return
+			if (input.releaseEditorModal.focus === "isDraft" || input.releaseEditorModal.focus === "isPrerelease") return
+			if (isSingleLineInputKey(key)) {
+				input.setReleaseEditorModal((current) => {
+					const field = current.focus as "tagName" | "name" | "body" | "targetCommitish"
+					const previous = current[field]
+					const value = editSingleLineInput(previous, key) ?? previous
+					return value === previous ? current : { ...current, [field]: value, error: null }
+				})
+			}
+			return
+		}
+
+		if (input.resourceEditorModalActive) {
+			if (input.resourceEditorModal.running || !isSingleLineInputKey(key)) return
+			input.setResourceEditorModal((current) => {
+				if (current.focus === "source" || current.focus === "state") return current
+				const field = current.kind === "branch" ? "branchName" : current.focus === "title" || current.focus === "description" || current.focus === "dueOn" ? current.focus : null
+				if (!field) return current
+				const previous = current[field]
+				if (typeof previous !== "string") return current
+				const value = editSingleLineInput(previous, key) ?? previous
+				return value === previous ? current : { ...current, [field]: value, error: null }
+			})
+			return
+		}
+
+		// Numeric tab shortcuts (1-9) — only active in list mode (no modal,
 		// no full-view, no filter editing).
 		if (!input.filterMode && !input.detailFullView && !input.diffFullView && !input.commentsViewActive) {
 			const text = printableKeyText(key)
-			if (text === "1") {
-				input.switchWorkspaceSurface(input.workspaceTabSurfaces[0] ?? input.activeWorkspaceSurface)
-				return
-			}
-			if (text === "2") {
-				input.switchWorkspaceSurface(input.workspaceTabSurfaces[1] ?? input.activeWorkspaceSurface)
-				return
-			}
-			if (text === "3") {
-				input.switchWorkspaceSurface(input.workspaceTabSurfaces[2] ?? input.activeWorkspaceSurface)
+			const position = text && /^[1-9]$/.test(text) ? Number(text) - 1 : -1
+			if (position >= 0) {
+				input.switchWorkspaceSurface(input.workspaceTabSurfaces[position] ?? input.activeWorkspaceSurface)
 				return
 			}
 		}

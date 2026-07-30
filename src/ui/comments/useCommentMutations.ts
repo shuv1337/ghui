@@ -10,9 +10,11 @@ import {
 	editReviewCommentAtom,
 	replyToReviewCommentAtom,
 } from "./atoms.js"
-import { useAtomSet } from "@effect/atom-react"
+import { useAtom, useAtomSet } from "@effect/atom-react"
 import type { CommentModalState, DeleteCommentModalState, FrozenCommentSubject } from "../modals.js"
 import { initialCommentModalState } from "../modals.js"
+import { addPendingReviewCommentAtom, createPendingReviewAtom, pendingReviewByDiffKeyAtom } from "../diff/atoms.js"
+import { InvalidSuggestionTargetError, suggestionBlock } from "../diff/suggestions.js"
 
 const reviewCommentAsPullRequestComment = (comment: PullRequestReviewComment): PullRequestComment => ({ _tag: "review-comment", ...comment })
 
@@ -100,6 +102,9 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 	const editReviewComment = useAtomSet(editReviewCommentAtom, { mode: "promise" })
 	const deletePullRequestIssueComment = useAtomSet(deletePullRequestIssueCommentAtom, { mode: "promise" })
 	const deleteReviewComment = useAtomSet(deleteReviewCommentAtom, { mode: "promise" })
+	const createPendingReview = useAtomSet(createPendingReviewAtom, { mode: "promise" })
+	const addPendingReviewComment = useAtomSet(addPendingReviewCommentAtom, { mode: "promise" })
+	const [pendingReviewByDiffKey, setPendingReviewByDiffKey] = useAtom(pendingReviewByDiffKeyAtom)
 
 	const {
 		selectedCommentSubject,
@@ -201,14 +206,26 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 
 	const submitDiffComment = () => {
 		if (commentModal.target.kind !== "diff" || !commentModal.target.target) return
-		const body = requireCommentBody()
-		if (body === null) return
+		const rawBody = requireCommentBody()
+		if (rawBody === null) return
 
 		const frozen = commentModal.target.target
 		const targetRange = frozen.range
 		const target = frozen.anchor
 		const key = frozen.diffKey
 		const threadKey = diffCommentThreadMapKey(frozen.diffKey, target)
+		let body = rawBody
+		if (commentModal.contentKind === "suggestion") {
+			try {
+				body = suggestionBlock(rawBody, target.side)
+			} catch (error) {
+				setCommentModal((current) => ({
+					...current,
+					error: error instanceof InvalidSuggestionTargetError ? error.message : errorMessage(error),
+				}))
+				return
+			}
+		}
 		const optimisticReview = {
 			id: `local:${Date.now()}`,
 			path: target.path,
@@ -231,6 +248,34 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 			body,
 			...rangeInput,
 		} satisfies CreatePullRequestCommentInput
+
+		if (commentModal.submitMode === "queue") {
+			const previous = pendingReviewByDiffKey[key] ?? null
+			if (previous) {
+				setPendingReviewByDiffKey((current) => ({
+					...current,
+					[key]: { ...previous, comments: [...previous.comments, optimisticReview] },
+				}))
+			}
+			closeActiveModal()
+			setDiffCommentRangeStartIndex(null)
+			flashNotice(`Queueing review comment on ${target.path}:${target.line}`)
+			void (previous ? Promise.resolve(previous) : createPendingReview({ repository: frozen.repository, number: frozen.number, commitId: frozen.commitId }))
+				.then((review) => addPendingReviewComment({ review, input: apiInput }).then((comment) => ({ review, comment })))
+				.then(({ review, comment }) => {
+					setPendingReviewByDiffKey((current) => {
+						const cached = current[key]
+						const comments = cached?.id === review.id ? cached.comments.map((entry) => (entry.id === optimisticReview.id ? comment : entry)) : [...review.comments, comment]
+						return { ...current, [key]: { ...review, comments } }
+					})
+					flashNotice(`Queued review comment on ${target.path}:${target.line}`)
+				})
+				.catch((error) => {
+					setPendingReviewByDiffKey((current) => ({ ...current, [key]: previous }))
+					flashNotice(errorMessage(error))
+				})
+			return
+		}
 
 		submitOptimisticComment({
 			key,
@@ -346,12 +391,15 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 			return
 		}
 		const anchorLabel = comment._tag === "review-comment" ? `Editing ${comment.path}:${comment.line}` : `Editing comment on #${subject.number}`
-		setCommentModal({
+		setCommentModal((current) => ({
+			...current,
 			body: comment.body,
 			cursor: comment.body.length,
 			error: null,
+			submitMode: "post",
+			contentKind: "comment",
 			target: { kind: "edit", subject, commentId: comment.id, commentTag: comment._tag, anchorLabel },
-		})
+		}))
 	}
 
 	const submitEditComment = () => {
@@ -360,7 +408,9 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		if (body === null) return
 		const target = commentModal.target
 		const key = target.subject.key
-		const previous = (pullRequestComments[key] ?? []).find((entry) => entry.id === target.commentId)
+		const pendingPrevious = pendingReviewByDiffKey[key]?.comments.find((entry) => entry.id === target.commentId)
+		const previous =
+			(pullRequestComments[key] ?? []).find((entry) => entry.id === target.commentId) ?? (pendingPrevious ? reviewCommentAsPullRequestComment(pendingPrevious) : undefined)
 		if (!previous) {
 			setCommentModal((current) => ({ ...current, error: "Comment not found in cache." }))
 			return
@@ -372,6 +422,12 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		const replaceInList = <T extends { readonly id: string }>(list: readonly T[], next: T) => list.map((entry) => (entry.id === target.commentId ? next : entry))
 
 		setPullRequestComments((current) => ({ ...current, [key]: replaceInList(current[key] ?? [], { ...previous, body }) }))
+		if (pendingPrevious) {
+			setPendingReviewByDiffKey((current) => {
+				const review = current[key]
+				return review ? { ...current, [key]: { ...review, comments: replaceInList(review.comments, { ...pendingPrevious, body }) } } : current
+			})
+		}
 		if (threadKey && previousReview) {
 			setDiffCommentThreads((current) => ({
 				...current,
@@ -395,6 +451,12 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 						[threadKey]: replaceInList(current[threadKey] ?? [], updated),
 					}))
 				}
+				if (pendingPrevious && updated._tag === "review-comment") {
+					setPendingReviewByDiffKey((current) => {
+						const review = current[key]
+						return review ? { ...current, [key]: { ...review, comments: replaceInList(review.comments, updated) } } : current
+					})
+				}
 				flashNotice("Comment updated")
 			})
 			.catch((error) => {
@@ -404,6 +466,12 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 						...current,
 						[threadKey]: replaceInList(current[threadKey] ?? [], previousReview),
 					}))
+				}
+				if (pendingPrevious) {
+					setPendingReviewByDiffKey((current) => {
+						const review = current[key]
+						return review ? { ...current, [key]: { ...review, comments: replaceInList(review.comments, pendingPrevious) } } : current
+					})
 				}
 				flashNotice(errorMessage(error))
 			})
@@ -453,7 +521,8 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 		const key = deleteCommentModal.subject.key
 		const list = pullRequestComments[key] ?? []
 		const previousIndex = list.findIndex((entry) => entry.id === target.commentId)
-		const previous = previousIndex >= 0 ? list[previousIndex] : undefined
+		const pendingPrevious = pendingReviewByDiffKey[key]?.comments.find((entry) => entry.id === target.commentId)
+		const previous = previousIndex >= 0 ? list[previousIndex] : pendingPrevious ? reviewCommentAsPullRequestComment(pendingPrevious) : undefined
 		if (!previous) {
 			setDeleteCommentModal((current) => ({ ...current, error: "Comment not found in cache." }))
 			return
@@ -469,6 +538,12 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 			...current,
 			[key]: (current[key] ?? []).filter((entry) => entry.id !== target.commentId),
 		}))
+		if (pendingPrevious) {
+			setPendingReviewByDiffKey((current) => {
+				const review = current[key]
+				return review ? { ...current, [key]: { ...review, comments: review.comments.filter((entry) => entry.id !== target.commentId) } } : current
+			})
+		}
 		if (threadKey) {
 			setDiffCommentThreads((current) => {
 				const next = { ...current }
@@ -492,13 +567,15 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 			.then(() => flashNotice("Comment deleted"))
 			.catch((error) => {
 				// Splice the previous entry back at its original index in both caches.
-				setPullRequestComments((current) => {
-					const arr = current[key] ?? []
-					if (arr.some((entry) => entry.id === previous.id)) return current
-					const restored = [...arr]
-					restored.splice(Math.min(previousIndex, restored.length), 0, previous)
-					return { ...current, [key]: restored }
-				})
+				if (previousIndex >= 0) {
+					setPullRequestComments((current) => {
+						const arr = current[key] ?? []
+						if (arr.some((entry) => entry.id === previous.id)) return current
+						const restored = [...arr]
+						restored.splice(Math.min(previousIndex, restored.length), 0, previous)
+						return { ...current, [key]: restored }
+					})
+				}
 				if (threadKey && previousReview) {
 					setDiffCommentThreads((current) => {
 						const arr = current[threadKey] ?? []
@@ -510,6 +587,13 @@ export const useCommentMutations = (input: UseCommentMutationsInput): UseComment
 					})
 				}
 				if (selectedIssueUrl && target.commentTag === "comment") updateIssue(selectedIssueUrl, (issue) => ({ ...issue, commentCount: issue.commentCount + 1 }))
+				if (pendingPrevious) {
+					setPendingReviewByDiffKey((current) => {
+						const review = current[key]
+						if (!review || review.comments.some((entry) => entry.id === pendingPrevious.id)) return current
+						return { ...current, [key]: { ...review, comments: [...review.comments, pendingPrevious] } }
+					})
+				}
 				flashNotice(errorMessage(error))
 			})
 	}

@@ -17,6 +17,8 @@ export interface RunsViewCtx {
 	readonly previousFailure: () => void
 	readonly refresh: () => void
 	readonly openInBrowser: () => void
+	readonly repositoryActions?: boolean
+	readonly runCommandById?: (id: string, options?: { readonly notifyDisabled?: boolean }) => boolean
 }
 
 const Runs = context<RunsViewCtx>()
@@ -41,4 +43,53 @@ export const runsViewKeymap = Runs(
 
 	{ id: "runs.refresh", title: "Refresh runs", keys: ["r"], run: (s) => s.refresh() },
 	{ id: "runs.open-browser", title: "Open in browser", keys: ["o"], run: (s) => s.openInBrowser() },
+	{
+		id: "actions.retry",
+		title: "Retry workflow run",
+		keys: ["shift+r"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.retry", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.cancel",
+		title: "Cancel workflow run",
+		keys: ["x"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.cancel", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.dispatch",
+		title: "Dispatch workflow",
+		keys: ["d"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.dispatch", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.download-artifact",
+		title: "Download workflow artifact",
+		keys: ["a"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.downloadArtifact", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.cycle-status-filter",
+		title: "Cycle run status filter",
+		keys: ["f"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.cycleStatusFilter", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.cycle-workflow-filter",
+		title: "Cycle workflow filter",
+		keys: ["w"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("actions.cycleWorkflowFilter", { notifyDisabled: true }),
+	},
+	{
+		id: "actions.search",
+		title: "Search workflow runs",
+		keys: ["/"],
+		when: (s) => s.repositoryActions === true,
+		run: (s) => s.runCommandById?.("filter.open", { notifyDisabled: true }),
+	},
 )

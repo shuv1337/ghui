@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { Effect } from "effect"
@@ -8,6 +8,7 @@ import { binaryPackageName as binaryPackageNameForTarget, currentReleaseTargetId
 type CommandResult = {
 	readonly stdout: string
 	readonly stderr: string
+	readonly exitCode: number
 }
 
 const root = process.cwd()
@@ -16,11 +17,15 @@ const targetId = currentReleaseTargetId()
 const target = findReleaseTarget(targetId)
 const binaryPackageName = target ? binaryPackageNameForTarget(rootPackageJson.name, target) : null
 
-const run = async (cmd: readonly string[], cwd: string): Promise<CommandResult> => {
-	const proc = Bun.spawnSync({ cmd: [...cmd], cwd, stdout: "pipe", stderr: "pipe" })
-	const result = { stdout: proc.stdout.toString(), stderr: proc.stderr.toString() }
-	if (proc.exitCode !== 0) {
-		throw new Error(`Command failed (${proc.exitCode}): ${cmd.join(" ")}\n${result.stdout}${result.stderr}`)
+const run = async (
+	cmd: readonly string[],
+	cwd: string,
+	options: { readonly env?: Readonly<Record<string, string>>; readonly allowFailure?: boolean } = {},
+): Promise<CommandResult> => {
+	const proc = Bun.spawnSync({ cmd: [...cmd], cwd, stdout: "pipe", stderr: "pipe", ...(options.env ? { env: options.env } : {}) })
+	const result = { stdout: proc.stdout.toString(), stderr: proc.stderr.toString(), exitCode: proc.exitCode }
+	if (proc.exitCode !== 0 && !options.allowFailure) {
+		throw new Error(`Command failed (${proc.exitCode}) in ${cwd}: ${cmd.join(" ")}\n${result.stdout}${result.stderr}`)
 	}
 	return result
 }
@@ -46,6 +51,46 @@ const assertInstalledPackage = async (projectDir: string) => {
 
 	const version = await run(["node_modules/.bin/ghui", "--version"], projectDir)
 	assert(version.stdout.trim() === rootPackageJson.version, `Expected ghui --version to print ${rootPackageJson.version}, got ${JSON.stringify(version.stdout.trim())}`)
+
+	const fakeBin = join(projectDir, "fake-bin")
+	const fakeGh = join(fakeBin, "gh")
+	await mkdir(fakeBin, { recursive: true })
+	await writeFile(
+		fakeGh,
+		`#!/bin/sh
+if [ "$1" = "--version" ]; then printf '%s\\n' 'gh version 2.99.0 (smoke)'; exit 0; fi
+if [ "$1" = "auth" ]; then exit 0; fi
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then printf '%s\\n' 'octo/example'; exit 0; fi
+if [ "$1" = "repo" ] && [ "$2" = "list" ]; then printf '%s\\n' '[{"nameWithOwner":"octo/example","pushedAt":"2026-07-29T12:00:00Z","isPrivate":false}]'; exit 0; fi
+if [ "$1" = "api" ]; then printf '%s\\n' '{}'; exit 0; fi
+exit 0
+`,
+	)
+	await chmod(fakeGh, 0o755)
+	const inheritedEnvironment = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+	const environment = {
+		...inheritedEnvironment,
+		PATH: `${fakeBin}:${inheritedEnvironment.PATH ?? ""}`,
+		GHUI_CONFIG_DIR: join(projectDir, "config"),
+		GHUI_CACHE_PATH: "off",
+		TERM: "xterm-256color",
+	}
+	const help = await run(["node_modules/.bin/ghui", "--help"], projectDir, { env: environment })
+	assert(help.stdout.includes("ghui doctor [--json]"), "Installed package help must include CLI operations")
+	const doctor = await run(["node_modules/.bin/ghui", "doctor", "--json"], projectDir, { env: environment })
+	const doctorJson = JSON.parse(doctor.stdout) as { status?: string; checks?: readonly { id?: string }[] }
+	assert(doctorJson.status === "degraded" || doctorJson.status === "healthy", "Installed doctor must return a healthy or degraded report")
+	assert(
+		doctorJson.checks?.some((check) => check.id === "cache"),
+		"Installed doctor must inspect cache readiness",
+	)
+	const cache = await run(["node_modules/.bin/ghui", "cache", "list", "--json"], projectDir, { env: environment })
+	assert((JSON.parse(cache.stdout) as { health?: string }).health === "disabled", "Installed cache list must honor GHUI_CACHE_PATH=off")
+	const repositories = await run(["node_modules/.bin/ghui", "repos", "--json"], projectDir, { env: environment })
+	assert((JSON.parse(repositories.stdout) as readonly unknown[]).length === 1, "Installed repos command must return the fake GitHub repository")
+	await run(["node_modules/.bin/ghui", "--repo", "octo/example", "open", "issue", "7"], projectDir, { env: environment })
+	const noTty = await run(["node_modules/.bin/ghui"], projectDir, { env: environment, allowFailure: true })
+	assert(noTty.exitCode === 2 && noTty.stderr.includes("interactive TTY"), "Installed package must refuse a non-interactive bare launch")
 }
 
 const assertCacheServiceOpens = async () => {
@@ -68,7 +113,13 @@ try {
 	const packDir = join(tempRoot, "pack")
 	const npmProject = join(tempRoot, "npm-install")
 	const bunProject = join(tempRoot, "bun-install")
-	await Promise.all([mkdir(packDir, { recursive: true }), mkdir(npmProject, { recursive: true }), mkdir(bunProject, { recursive: true })])
+	const bunCache = join(tempRoot, "bun-cache")
+	await Promise.all([mkdir(packDir, { recursive: true }), mkdir(npmProject, { recursive: true }), mkdir(bunProject, { recursive: true }), mkdir(bunCache, { recursive: true })])
+	await Promise.all(
+		[npmProject, bunProject].map((projectDir) =>
+			writeFile(join(projectDir, "package.json"), `${JSON.stringify({ name: "ghui-package-smoke", version: "0.0.0", private: true }, null, "\t")}\n`),
+		),
+	)
 
 	assert(binaryPackageName, `Unsupported package smoke platform: ${process.platform}-${process.arch}`)
 	await assertCacheServiceOpens()
@@ -85,10 +136,18 @@ try {
 	const binaryTarballPath = await packPackage(join(root, "dist", "npm", "binaries", targetId!))
 	const mainTarballPath = await packPackage(join(root, "dist", "npm", "main"))
 
-	await run(["npm", "install", binaryTarballPath, mainTarballPath], npmProject)
+	// Pass the target explicitly as well as using cwd. Some embedded Node/npm
+	// runtimes do not preserve a spawned cwd when resolving an otherwise empty
+	// install project, which can make npm succeed without populating this path.
+	await run(["npm", "install", "--omit", "optional", "--prefix", npmProject, mainTarballPath], npmProject)
+	await run(["npm", "install", "--force", "--no-package-lock", "--prefix", npmProject, binaryTarballPath], npmProject)
 	await assertInstalledPackage(npmProject)
 
-	await run(["bun", "add", binaryTarballPath, mainTarballPath], bunProject)
+	// Install the local binary as a direct dependency first. Bun otherwise
+	// deduplicates the same-version optional dependency from the registry before
+	// the local tarball can replace it.
+	await run(["bun", "add", "--cwd", bunProject, "--cache-dir", bunCache, binaryTarballPath], bunProject)
+	await run(["bun", "add", "--omit", "optional", "--cwd", bunProject, "--cache-dir", bunCache, mainTarballPath], bunProject)
 	await assertInstalledPackage(bunProject)
 } finally {
 	await rm(tempRoot, { recursive: true, force: true })

@@ -64,6 +64,7 @@ export interface DiffCommentNavigator {
 	readonly selectDiffCommentSide: (side: DiffCommentSide) => void
 	readonly selectDiffCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	readonly openDiffCommentModal: () => void
+	readonly openDiffSuggestionModal: () => void
 	readonly openDiffCommentThreadModal: () => void
 	readonly openSelectedDiffComment: () => void
 	readonly toggleDiffCommentRange: () => void
@@ -274,6 +275,10 @@ export const useDiffCommentNavigator = (input: DiffCommentNavigatorInput): DiffC
 			},
 		})
 	}
+	const openDiffSuggestionModal = () => {
+		openDiffCommentModal()
+		setCommentModal((current) => ({ ...current, contentKind: "suggestion" }))
+	}
 
 	const openDiffCommentThreadModal = () => {
 		if (!selectedDiffCommentAnchor || selectedDiffCommentThread.length === 0) return
@@ -330,6 +335,7 @@ export const useDiffCommentNavigator = (input: DiffCommentNavigatorInput): DiffC
 		selectDiffCommentSide,
 		selectDiffCommentLine,
 		openDiffCommentModal,
+		openDiffSuggestionModal,
 		openDiffCommentThreadModal,
 		openSelectedDiffComment,
 		toggleDiffCommentRange,

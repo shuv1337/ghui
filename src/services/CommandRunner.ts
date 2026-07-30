@@ -68,6 +68,7 @@ export class CommandRunner extends Context.Service<
 			schema: S,
 			command: string,
 			args: readonly string[],
+			options?: RunOptions,
 		) => Effect.Effect<S["Type"], CommandError | JsonParseError | Schema.SchemaError, S["DecodingServices"]>
 	}
 >()("ghui/CommandRunner") {
@@ -149,16 +150,16 @@ export class CommandRunner extends Context.Service<
 				return result
 			})
 
-			const runJson = Effect.fn("CommandRunner.runJson")(function* <A>(command: string, args: readonly string[]) {
-				const result = yield* run(command, args)
+			const runJson = Effect.fn("CommandRunner.runJson")(function* <A>(command: string, args: readonly string[], options?: RunOptions) {
+				const result = yield* run(command, args, options)
 				return yield* Effect.try({
 					try: () => JSON.parse(result.stdout) as A,
 					catch: (cause) => new JsonParseError({ command, args: [...args], stdout: result.stdout, cause }),
 				})
 			})
 
-			const runSchema = Effect.fn("CommandRunner.runSchema")(function* <S extends Schema.Top>(schema: S, command: string, args: readonly string[]) {
-				const value = yield* runJson<unknown>(command, args)
+			const runSchema = Effect.fn("CommandRunner.runSchema")(function* <S extends Schema.Top>(schema: S, command: string, args: readonly string[], options?: RunOptions) {
+				const value = yield* runJson<unknown>(command, args, options)
 				return yield* Schema.decodeUnknownEffect(schema)(value)
 			})
 

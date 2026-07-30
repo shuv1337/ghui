@@ -1,4 +1,4 @@
-import type { IssueItem, PullRequestComment, PullRequestItem } from "../domain.js"
+import type { IssueItem, PullRequestComment, PullRequestItem, ReleaseItem } from "../domain.js"
 import { canEditComment } from "../ui/comments/useCommentMutations.js"
 import type { LoadStatus } from "../domain.js"
 import type { RetryProgress } from "../ui/FooterHints.js"
@@ -23,6 +23,7 @@ export interface ComputeFooterPropsInput {
 	readonly selectedOrderedComment: PullRequestComment | null
 	readonly username: string | null
 	readonly selectedCommentsLength: number
+	readonly selectedItemCount: number
 	readonly selectedCommentSubject: IssueItem | PullRequestItem | null
 	readonly activeWorkspaceSurface: WorkspaceSurface
 	readonly selectedRepositoryItem: RepositoryListItem | null
@@ -30,6 +31,8 @@ export interface ComputeFooterPropsInput {
 	readonly selectedPullRequest: PullRequestItem | null
 	readonly pullRequestStatus: LoadStatus
 	readonly issuesStatus: LoadStatus
+	readonly releaseStatus: LoadStatus
+	readonly selectedRelease: ReleaseItem | null
 	readonly isActiveSurfaceLoading: boolean
 	readonly closeModal: CloseModalState
 	readonly pullRequestStateModal: PullRequestStateModalState
@@ -60,8 +63,9 @@ export const computeFooterProps = (input: ComputeFooterPropsInput): WorkspaceFoo
 		input.commentsViewActive && input.selectedCommentsStatus !== "idle" && input.selectedCommentsStatus !== "loading" && input.selectedOrderedComment !== null,
 	commentsViewCanEditSelected: canEditComment(input.selectedOrderedComment, input.username),
 	commentsViewCount: input.selectedCommentsLength,
-	hasSelection: input.selectedCommentSubject !== null,
-	canOpenDetails: input.selectedCommentSubject !== null,
+	selectedItemCount: input.selectedItemCount,
+	hasSelection: input.selectedCommentSubject !== null || (input.activeWorkspaceSurface === "releases" && input.selectedRelease !== null),
+	canOpenDetails: input.selectedCommentSubject !== null || (input.activeWorkspaceSurface === "releases" && input.selectedRelease !== null),
 	canOpenRepository: input.activeWorkspaceSurface === "repos" && input.selectedRepositoryItem !== null,
 	canAddRepository: input.activeWorkspaceSurface === "repos",
 	canRemoveRepository: input.activeWorkspaceSurface === "repos" && input.selectedRepositoryItem !== null,
@@ -69,7 +73,9 @@ export const computeFooterProps = (input: ComputeFooterPropsInput): WorkspaceFoo
 	canOpenDiff: input.activeWorkspaceSurface === "pullRequests" && input.selectedPullRequest !== null,
 	canOpenComments: input.selectedCommentSubject !== null,
 	hasError:
-		(input.activeWorkspaceSurface === "pullRequests" && input.pullRequestStatus === "error") || (input.activeWorkspaceSurface === "issues" && input.issuesStatus === "error"),
+		(input.activeWorkspaceSurface === "pullRequests" && input.pullRequestStatus === "error") ||
+		(input.activeWorkspaceSurface === "issues" && input.issuesStatus === "error") ||
+		(input.activeWorkspaceSurface === "releases" && input.releaseStatus === "error"),
 	isLoading: input.isActiveSurfaceLoading || input.closeModal.running || input.pullRequestStateModal.running || input.mergeModal.running || input.submitReviewModal.running,
 	loadingIndicator: input.loadingIndicator,
 	retryProgress: input.retryProgress,

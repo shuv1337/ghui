@@ -17,6 +17,7 @@ export interface WorkspaceFooterProps {
 	readonly commentsViewOnRealComment: boolean
 	readonly commentsViewCanEditSelected: boolean
 	readonly commentsViewCount: number
+	readonly selectedItemCount: number
 	readonly hasSelection: boolean
 	readonly canOpenDetails: boolean
 	readonly canOpenRepository: boolean
@@ -50,6 +51,7 @@ export const WorkspaceFooter = ({ footerNotice, ...hints }: WorkspaceFooterProps
 				commentsViewOnRealComment={hints.commentsViewOnRealComment}
 				commentsViewCanEditSelected={hints.commentsViewCanEditSelected}
 				commentsViewCount={hints.commentsViewCount}
+				selectedItemCount={hints.selectedItemCount}
 				hasSelection={hints.hasSelection}
 				canOpenDetails={hints.canOpenDetails}
 				canOpenRepository={hints.canOpenRepository}

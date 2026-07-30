@@ -1,7 +1,7 @@
 import type { DiffRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useMemo, type Ref } from "react"
 import type { DiffCommentSide, PullRequestItem, PullRequestReviewComment } from "../domain.js"
-import { colors, lineNumberTextColor, type ThemeId } from "./colors.js"
+import { colors, lineNumberTextColor, mixHex, type ThemeId } from "./colors.js"
 import { CommentBodyLine, commentCountText, commentMetaSegments, CommentSegmentsLine } from "./comments.js"
 import {
 	createDiffSyntaxStyle,
@@ -11,6 +11,8 @@ import {
 	diffFileStatsText,
 	diffStatText,
 	stackedDiffFileIndexAtLine,
+	stackedDiffSectionHeight,
+	windowedStackedDiffFileIndexes,
 	type DiffFileStats,
 	type DiffView,
 	type DiffWhitespaceMode,
@@ -24,17 +26,29 @@ import { DiffStats } from "./diffStats.js"
 import { Divider, fitCell, PaddedRow, PlainLine, TextLine } from "./primitives.js"
 import { shortRepoName } from "./pullRequests.js"
 
-const DiffPaneHeader = ({ pullRequest, paneWidth, loadingIndicator }: { pullRequest: PullRequestItem; paneWidth: number; loadingIndicator: string }) => {
+const DiffPaneHeader = ({
+	pullRequest,
+	paneWidth,
+	loadingIndicator,
+	pendingReviewCount,
+}: {
+	pullRequest: PullRequestItem
+	paneWidth: number
+	loadingIndicator: string
+	pendingReviewCount: number
+}) => {
 	const stats = diffStatText(pullRequest, loadingIndicator)
+	const pending = pendingReviewCount > 0 ? `${pendingReviewCount} pending  ` : ""
 	const headerWidth = Math.max(24, paneWidth - 2)
 	const leftHeader = `#${pullRequest.number} ${shortRepoName(pullRequest.repository)}`
-	const headerGap = Math.max(2, headerWidth - leftHeader.length - stats.length)
+	const headerGap = Math.max(2, headerWidth - leftHeader.length - pending.length - stats.length)
 	return (
 		<PaddedRow>
 			<TextLine>
 				<span fg={colors.count}>#{pullRequest.number}</span>
 				<span fg={colors.muted}> {shortRepoName(pullRequest.repository)}</span>
 				<span fg={colors.muted}>{" ".repeat(headerGap)}</span>
+				{pending ? <span fg={colors.accent}>{pending}</span> : null}
 				<DiffStats pullRequest={pullRequest} loadingIndicator={loadingIndicator} />
 			</TextLine>
 		</PaddedRow>
@@ -97,6 +111,7 @@ export const PullRequestDiffPane = ({
 	selectedCommentAnchor,
 	selectedCommentLabel,
 	selectedCommentThread,
+	pendingReviewCount,
 	onSelectCommentLine,
 	themeId,
 	themeGeneration,
@@ -117,6 +132,7 @@ export const PullRequestDiffPane = ({
 	selectedCommentAnchor: StackedDiffCommentAnchor | null
 	selectedCommentLabel: string | null
 	selectedCommentThread: readonly PullRequestReviewComment[]
+	pendingReviewCount: number
 	onSelectCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	themeId: ThemeId
 	themeGeneration: number
@@ -132,7 +148,7 @@ export const PullRequestDiffPane = ({
 	if (!diffState || diffState._tag === "Loading") {
 		return (
 			<box width={paneWidth} height={height} flexDirection="column">
-				<DiffPaneHeader pullRequest={pullRequest} paneWidth={paneWidth} loadingIndicator={loadingIndicator} />
+				<DiffPaneHeader pullRequest={pullRequest} paneWidth={paneWidth} loadingIndicator={loadingIndicator} pendingReviewCount={pendingReviewCount} />
 				<Divider width={paneWidth} />
 				<LoadingPane content={{ title: `${loadingIndicator} Loading diff`, hint: "Fetching patch from GitHub" }} width={paneWidth} height={Math.max(1, height - 2)} />
 			</box>
@@ -193,6 +209,7 @@ export const PullRequestDiffPane = ({
 	}
 	const stickyCommentColor = selectedCommentAnchor?.side === "LEFT" ? colors.status.failing : colors.status.passing
 	const diffLineNumberFg = lineNumberTextColor(colors.diff.lineNumberBg, colors.text)
+	const mountedFileIndexes = windowedStackedDiffFileIndexes(stackedFiles, scrollTop, Math.max(1, height - 2), selectedCommentAnchor?.fileIndex ?? null)
 	const handleDiffMouseDown = function (this: ScrollBoxRenderable, event: MouseEvent) {
 		if (event.button !== 0) return
 		const localY = event.y - this.viewport.y
@@ -206,7 +223,7 @@ export const PullRequestDiffPane = ({
 
 	return (
 		<box width={paneWidth} height={height} flexDirection="column">
-			<DiffPaneHeader pullRequest={pullRequest} paneWidth={paneWidth} loadingIndicator={loadingIndicator} />
+			<DiffPaneHeader pullRequest={pullRequest} paneWidth={paneWidth} loadingIndicator={loadingIndicator} pendingReviewCount={pendingReviewCount} />
 			<Divider width={paneWidth} />
 			<scrollbox
 				ref={scrollRef}
@@ -217,39 +234,45 @@ export const PullRequestDiffPane = ({
 				{...(showScrollbar ? {} : { verticalScrollbarOptions: { visible: false } })}
 				onMouseDown={handleDiffMouseDown}
 			>
-				{stackedFiles.map((stackedFile) => (
-					<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
-						{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}
-						<PaddedRow>
-							<FileHeader file={stackedFile.file} index={stackedFile.index} count={readyFiles.length} width={paneWidth} />
-						</PaddedRow>
-						<Divider width={paneWidth} />
-						<diff
-							ref={(diff: DiffRenderable | null) => setDiffRef(stackedFile.index, diff)}
-							diff={stackedFile.file.patch}
-							view={view}
-							syncScroll
-							filetype={stackedFile.file.filetype ?? "text"}
-							syntaxStyle={syntaxStyle}
-							fg={colors.text}
-							showLineNumbers
-							wrapMode={wrapMode}
-							addedBg={colors.diff.addedBg}
-							removedBg={colors.diff.removedBg}
-							contextBg={colors.diff.contextBg}
-							addedSignColor={colors.status.passing}
-							removedSignColor={colors.status.failing}
-							lineNumberFg={diffLineNumberFg}
-							lineNumberBg={colors.diff.lineNumberBg}
-							addedLineNumberBg={colors.diff.addedLineNumberBg}
-							removedLineNumberBg={colors.diff.removedLineNumberBg}
-							selectionBg={colors.selectedBg}
-							selectionFg={colors.selectedText}
-							height={stackedFile.diffHeight}
-							style={{ flexShrink: 0 }}
-						/>
-					</box>
-				))}
+				{stackedFiles.map((stackedFile) =>
+					mountedFileIndexes.has(stackedFile.index) ? (
+						<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}`} flexDirection="column" flexShrink={0}>
+							{stackedFile.index > 0 ? <Divider width={paneWidth} /> : null}
+							<PaddedRow>
+								<FileHeader file={stackedFile.file} index={stackedFile.index} count={readyFiles.length} width={paneWidth} />
+							</PaddedRow>
+							<Divider width={paneWidth} />
+							<diff
+								ref={(diff: DiffRenderable | null) => setDiffRef(stackedFile.index, diff)}
+								diff={stackedFile.file.patch}
+								view={view}
+								syncScroll
+								filetype={stackedFile.file.filetype ?? "text"}
+								syntaxStyle={syntaxStyle}
+								fg={colors.text}
+								showLineNumbers
+								wrapMode={wrapMode}
+								addedBg={colors.diff.addedBg}
+								removedBg={colors.diff.removedBg}
+								contextBg={colors.diff.contextBg}
+								addedContentBg={mixHex(colors.diff.addedBg === "transparent" ? colors.background : colors.diff.addedBg, colors.status.passing, 0.34)}
+								removedContentBg={mixHex(colors.diff.removedBg === "transparent" ? colors.background : colors.diff.removedBg, colors.status.failing, 0.34)}
+								addedSignColor={colors.status.passing}
+								removedSignColor={colors.status.failing}
+								lineNumberFg={diffLineNumberFg}
+								lineNumberBg={colors.diff.lineNumberBg}
+								addedLineNumberBg={colors.diff.addedLineNumberBg}
+								removedLineNumberBg={colors.diff.removedLineNumberBg}
+								selectionBg={colors.selectedBg}
+								selectionFg={colors.selectedText}
+								height={stackedFile.diffHeight}
+								style={{ flexShrink: 0 }}
+							/>
+						</box>
+					) : (
+						<box key={`${pullRequest.url}-${stackedFile.index}-${view}-${wrapMode}-placeholder`} height={stackedDiffSectionHeight(stackedFile)} flexShrink={0} />
+					),
+				)}
 			</scrollbox>
 			{stickyFile ? (
 				<box position="absolute" top={2} left={0} width={paneWidth} height={2} zIndex={10} flexDirection="column" backgroundColor={colors.background}>

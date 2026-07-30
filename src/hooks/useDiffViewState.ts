@@ -10,6 +10,8 @@ import {
 	diffScrollTopAtom,
 	diffWhitespaceModeAtom,
 	diffWrapModeAtom,
+	pendingReviewByDiffKeyAtom,
+	pendingReviewLoadedAtom,
 	pullRequestDiffCacheAtom,
 } from "../ui/diff/atoms.js"
 
@@ -30,6 +32,8 @@ export const useDiffViewState = () => {
 	const [diffCommentThreads, setDiffCommentThreads] = useAtom(diffCommentThreadsAtom)
 	const setDiffCommentsLoaded = useAtomSet(diffCommentsLoadedAtom)
 	const setPullRequestDiffCache = useAtomSet(pullRequestDiffCacheAtom)
+	const setPendingReviewByDiffKey = useAtomSet(pendingReviewByDiffKeyAtom)
+	const setPendingReviewLoaded = useAtomSet(pendingReviewLoadedAtom)
 	return {
 		diffFileIndex,
 		setDiffFileIndex,
@@ -49,5 +53,7 @@ export const useDiffViewState = () => {
 		setDiffCommentThreads,
 		setDiffCommentsLoaded,
 		setPullRequestDiffCache,
+		setPendingReviewByDiffKey,
+		setPendingReviewLoaded,
 	}
 }

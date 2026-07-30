@@ -21,6 +21,8 @@ export interface DiffViewCtx {
 	readonly openChangedFiles: () => void
 	readonly toggleFilePanel: () => void
 	readonly openSubmitReview: () => void
+	readonly openSuggestion: () => void
+	readonly openPendingReview: () => void
 	readonly nextFile: () => void
 	readonly previousFile: () => void
 	readonly openInBrowser: () => void
@@ -84,6 +86,8 @@ export const diffViewKeymap = Diff(
 	{ id: "diff.next-file", title: "Next file", keys: ["]"], run: (s) => s.nextFile() },
 	{ id: "diff.previous-file", title: "Previous file", keys: ["["], run: (s) => s.previousFile() },
 	{ id: "diff.submit-review", title: "Review pull request", keys: ["shift+r"], run: (s) => s.openSubmitReview() },
+	{ id: "diff.suggest", title: "Add suggestion", keys: ["shift+s"], run: (s) => s.openSuggestion() },
+	{ id: "review.pending", title: "Open pending review", keys: ["shift+p"], run: (s) => s.openPendingReview() },
 
 	// Boundary jumps + align
 	{ id: "diff.first", title: "First comment", keys: ["g g"], run: (s) => s.moveAnchorToBoundary("first") },

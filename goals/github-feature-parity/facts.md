@@ -1,0 +1,39 @@
+# Facts
+
+- A machine-readable parity manifest accounts for every user-visible glab-tui capability that its GitHub backend supports as complete, intentionally mapped to a native ghui interaction, or explicitly excluded with a GitHub-specific reason.
+- Parity is behavioral rather than pixel-for-pixel, and the implementation preserves ghui's OpenTUI/React, Effect, Atom, Surface, command-registry, and composable-keymap architecture.
+- Existing pull-request and issue queues, repository navigation, comments, diffs, cache-first loading, editor handoff, themes, mouse interactions, and packaging behavior continue to work.
+- User scope contains Repositories, Pull Requests, Issues, and Notifications; repository scope contains Pull Requests, Issues, Actions, Releases, Milestones, Branches, Environments, and Runners, with jobs nested under Actions and deployments nested under Environments.
+- Every completed capability is reachable through a Surface, view, modal, or command and supports keyboard and command-palette access plus mouse access wherever the surrounding ghui component supports mouse interaction.
+- Every new Surface and modal handles loading, cached refresh, empty, error, retry, and permission-denied states while preserving selection across refresh, filter, sort, and grouping.
+- A scope-aware Surface registry is the single source for stable ids, labels, availability, badges, refresh commands, filterability, full-screen behavior, and disabled reasons; narrow terminals expose every Surface through an overflow picker.
+- GitHubService remains the public Effect service, is composed from narrow private capability modules, and every public method lands with deterministic MockGitHubService behavior.
+- Every user action has a stable command id, and keybindings, the command palette, buttons, mouse handlers, and footer hints dispatch commands instead of owning mutation logic.
+- Destructive actions require confirmation at the command boundary, unsupported actions expose a disabled reason, and optimistic mutations roll back on failure before an authoritative refresh.
+- Configuration is versioned, written atomically, preserves unknown keys, migrates the existing unversioned file without losing current settings, and falls back per field while ghui doctor reports invalid values.
+- Cache changes use additive migrations with old-database, reopen, and corrupt-row coverage; ghui never caches job logs, artifact bytes, secrets, review bodies, or workflow input values.
+- Repository Releases support list, details, create, edit, and confirmed delete with native gh release commands, deterministic mocks, cache convergence, and keyboard, palette, and mouse operation.
+- Issues support create, full edit, close, reopen, delete, labels, assignees, milestones, due dates where GitHub supports them, and safe bulk status and metadata changes.
+- Pull Requests support create, full edit, close, reopen, draft transitions, approve, merge, labels, assignees, reviewers, milestones, and base/head metadata; pull-request deletion remains unavailable because GitHub does not support it.
+- Metadata selectors are searchable and paginated, bulk Issue and Pull Request operations use bounded concurrency, and their result reports stable succeeded, failed, skipped, and retryable items.
+- Users can discover, create, resume, edit, discard, and submit a server-backed pending review containing ordered inline and multi-line comments as one atomic Comment, Approve, or Request-changes review.
+- Diffs support accurate GitHub suggestions, semantic rows, syntax highlighting, word-diff spans, viewport windowing, split and unified layouts, whitespace filtering, wrapping, file navigation, and stable comment anchors on large patches.
+- Diff render tests do not treat a destroyed Tree-sitter highlighter as success; the current teardown warning is removed or explicitly contained and syntax highlighting is asserted directly.
+- A repository-wide Actions Surface supports workflow and run filters, run and job drill-down, on-demand logs, retry and cancel where GitHub permits, typed workflow dispatch inputs, and bounded refresh while an in-progress run is visible.
+- Actions artifacts can be listed and downloaded only to an explicit destination, with path-traversal, existing-destination, interruption, and empty-state safeguards.
+- Branches list default, protected, and SHA metadata; users can create a branch from a selected ref and can delete only non-default, non-protected, non-selected branches after confirmation.
+- Milestones list state, progress, due date, and nested issues and support create, edit, close, reopen, and confirmed delete.
+- Environments show latest deployment state and URL and provide paginated deployment history and browser opening; they remain read-only in this parity program.
+- Repository runners show status, busy state, labels, details, and honest permission failures; GitLab-only pause, resume, and edit actions are not exposed.
+- A user-scoped Notifications Surface supports unread and all views, search, type and repository context, opening the target, and marking one or selected notifications read without touching ordinary user notifications during tests.
+- Schema-driven visible columns, sorting, grouping, and value filters compose deterministically and persist per Surface across restarts with safe handling of removed or renamed columns.
+- Users can override key sequences by stable command id, conflicts and invalid or unreachable bindings are diagnosed before dispatch, scoped overrides cannot bypass safety rules, and reset restores defaults.
+- The packaged CLI provides doctor with stable JSON, cache list and safe dry-run/apply cleanup, open for supported entities, and repos, with tested help, exit codes, suggestions, and no-TTY behavior.
+- GitHub operations prefer native gh subcommands and use raw gh api only when native output or mutation support is insufficient; raw responses use typed schema decoding and deterministic pagination.
+- Every GitHubService method has tests for success, pagination or bounded limits, empty and malformed responses, non-zero exit, timeout, authentication and permission errors, primary and secondary rate limits, telemetry redaction, and exact argv or API endpoint, method, and body.
+- A network-free fake-gh and OpenTUI harness proves service effects and keyboard and mouse behavior at 60x16, 99x24, 100x24, and 160x40 without snapshotting tokens or private bodies.
+- Live scenarios run only against an exactly named disposable repository and dedicated test identity, require explicit apply mode and approval for destructive or externally visible actions, record prefixed fixtures, clean up idempotently, and produce a final resource inventory.
+- Goal execution proceeds autonomously through the ordered milestones and stops only for missing external access, destructive live-test approval, or a material scope decision not settled by these facts.
+- Each milestone is independently mergeable and releasable, includes a changeset for user-facing behavior, keeps incomplete Surfaces unregistered, and passes the fast and packaged integration gates before completion.
+- Final parity requires agreement among source tests, deterministic mocks, the installed standalone binary, a disposable live GitHub repository, npm packaging, and Homebrew packaging, with the generated parity report containing only complete or approved excluded entries.
+- The goal excludes GitLab hosting and GitLab-only fields or actions, pull-request deletion, an embedded terminal, a copied Rust architecture, and an in-app self-updater.

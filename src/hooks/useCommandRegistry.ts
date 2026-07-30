@@ -1,5 +1,5 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react"
-import { useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { AppCommand } from "../commands.js"
 import { clampCommandIndex, type CommandScope, commandEnabled, defineCommand, filterCommands, sortCommandsByActiveScope } from "../commands.js"
 import { commandSnapshotsAtom } from "../commands/atoms.js"
@@ -9,6 +9,9 @@ import { canEditComment } from "../ui/comments/useCommentMutations.js"
 import type { PullRequestComment } from "../domain.js"
 import type { PullRequestView } from "../pullRequestViews.js"
 import { parseRepositoryInput } from "../pullRequestViews.js"
+import { readStoredConfig, subscribeStoredConfig } from "../configStore.js"
+import { configuredShortcutFor } from "../settings/keybindings.js"
+import { devLog } from "../devLog.js"
 
 interface CommandPaletteShape {
 	readonly query: string
@@ -73,21 +76,39 @@ export const useCommandRegistry = ({
 }: UseCommandRegistryInput & { readonly closeActiveModal: () => void; readonly flashNotice: (msg: string) => void }): CommandRegistry => {
 	const dispatchCommand = useAtomSet(dispatchCommandAtom, { mode: "promise" })
 	const commandSnapshots = useAtomValue(commandSnapshotsAtom)
+	const [keybindingOverrides, setKeybindingOverrides] = useState<Readonly<Record<string, readonly string[]>>>({})
+	useEffect(() => {
+		let active = true
+		void readStoredConfig().then(
+			(result) => {
+				if (active) setKeybindingOverrides(result.config.keybindings)
+			},
+			(cause) => devLog("useCommandRegistry:configReadFailed", { cause: String(cause) }),
+		)
+		const unsubscribe = subscribeStoredConfig((result) => setKeybindingOverrides(result.config.keybindings))
+		return () => {
+			active = false
+			unsubscribe()
+		}
+	}, [])
 	const registeredCommands = useMemo<readonly AppCommand[]>(
 		() =>
-			commandSnapshots.map((snapshot) => ({
-				id: snapshot.id,
-				title: snapshot.title,
-				scope: snapshot.scope,
-				...(snapshot.subtitle !== undefined && { subtitle: snapshot.subtitle }),
-				...(snapshot.shortcut !== undefined && { shortcut: snapshot.shortcut }),
-				...(snapshot.keywords !== undefined && { keywords: snapshot.keywords }),
-				disabledReason: snapshot.disabledReason,
-				run: () => {
-					void dispatchCommand(snapshot.id)
-				},
-			})),
-		[commandSnapshots, dispatchCommand],
+			commandSnapshots.map((snapshot) => {
+				const shortcut = configuredShortcutFor(snapshot.id, snapshot.shortcut, keybindingOverrides)
+				return {
+					id: snapshot.id,
+					title: snapshot.title,
+					scope: snapshot.scope,
+					...(snapshot.subtitle !== undefined && { subtitle: snapshot.subtitle }),
+					...(shortcut !== undefined && { shortcut }),
+					...(snapshot.keywords !== undefined && { keywords: snapshot.keywords }),
+					disabledReason: snapshot.disabledReason,
+					run: () => {
+						void dispatchCommand(snapshot.id)
+					},
+				}
+			}),
+		[commandSnapshots, dispatchCommand, keybindingOverrides],
 	)
 
 	const setCommandRuntime = useAtomSet(commandRuntimeAtom)

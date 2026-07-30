@@ -1,0 +1,64 @@
+{
+	"viewer": {
+		"login": "parity-user"
+	},
+	"pullRequestPages": [
+		{
+			"nodes": [
+				{
+					"number": 101,
+					"title": "Parity fixture pull request",
+					"repository": "parity-owner/parity-repo"
+				}
+			],
+			"pageInfo": {
+				"hasNextPage": true,
+				"endCursor": "fixture-cursor-1"
+			}
+		},
+		{
+			"nodes": [
+				{
+					"number": 102,
+					"title": "Second parity fixture",
+					"repository": "parity-owner/parity-repo"
+				}
+			],
+			"pageInfo": {
+				"hasNextPage": false,
+				"endCursor": null
+			}
+		}
+	],
+	"issueDetail": {
+		"number": 201,
+		"title": "Parity fixture issue",
+		"body": "Synthetic public fixture body.",
+		"state": "OPEN",
+		"author": {
+			"login": "fixture-author"
+		}
+	},
+	"workflow": {
+		"id": 301,
+		"name": "Parity fixture workflow",
+		"inputs": {
+			"environment": {
+				"type": "choice",
+				"required": true,
+				"default": "staging",
+				"options": ["staging", "production"]
+			},
+			"dry_run": {
+				"type": "boolean",
+				"required": false,
+				"default": true
+			}
+		}
+	},
+	"jobLog": "2026-07-29T00:00:00Z fixture step started\n2026-07-29T00:00:01Z fixture step completed\n",
+	"mutation": {
+		"id": "fixture-mutation-1",
+		"state": "updated"
+	}
+}

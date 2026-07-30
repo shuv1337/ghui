@@ -1,7 +1,7 @@
 {
 	"name": "@kitlangton/ghui",
 	"version": "0.9.0",
-	"description": "Terminal UI for GitHub pull requests",
+	"description": "Keyboard-driven terminal workspace and operational CLI for GitHub",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -14,6 +14,9 @@
 	"homepage": "https://github.com/kitlangton/ghui#readme",
 	"keywords": [
 		"github",
+		"github-actions",
+		"issues",
+		"notifications",
 		"pull-requests",
 		"terminal",
 		"tui",
@@ -46,11 +49,15 @@
 		"start": "bun run src/index.tsx",
 		"test": "bun test test",
 		"test:keymap": "bun run --cwd=packages/keymap test",
+		"test:diff-highlighter-lifecycle": "bun test test/diffHighlighterLifecycle.test.ts",
+		"benchmark:diff": "bun run dev/diff-benchmark.ts",
 		"typecheck": "tsc --noEmit",
 		"lint": "oxlint --tsconfig tsconfig.json src/ test/",
 		"format": "oxfmt src/ test/ dev/",
 		"format:check": "oxfmt --check src/ test/ dev/",
 		"package:smoke": "bun run dev/package-smoke.ts",
+		"parity:report": "bun run dev/parity-report.ts",
+		"parity:live": "bun run dev/live-parity.ts",
 		"prepublishOnly": "printf '%s\n' 'Publish dist/npm/main, not the source checkout.' && exit 1",
 		"prepack": "bun run build:cli"
 	},

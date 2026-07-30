@@ -4,8 +4,14 @@ import type {
 	OpenRepositoryModalState,
 	ThemeModalState,
 	ChangedFilesModalState,
+	ArtifactDownloadModalState,
+	BulkEditorModalState,
 	LabelModalState,
 	SubmitReviewModalState,
+	ReleaseEditorModalState,
+	ItemEditorModalState,
+	MetadataSelectorModalState,
+	WorkflowDispatchModalState,
 } from "../ui/modals/types.js"
 import { insertText, type CommentEditorValue } from "../ui/commentEditor.js"
 import { singleLineText } from "../ui/singleLineInput.js"
@@ -22,6 +28,18 @@ export interface UsePasteRouterInput {
 	readonly labelModalActive: boolean
 	readonly changedFilesModalActive: boolean
 	readonly filterMode: boolean
+	readonly releaseEditorModalActive: boolean
+	readonly itemEditorModalActive: boolean
+	readonly metadataSelectorModalActive: boolean
+	readonly bulkEditorModalActive: boolean
+	readonly workflowDispatchModalActive: boolean
+	readonly artifactDownloadModalActive: boolean
+	readonly releaseEditorModal: ReleaseEditorModalState
+	readonly itemEditorModal: ItemEditorModalState
+	readonly metadataSelectorModal: MetadataSelectorModalState
+	readonly bulkEditorModal: BulkEditorModalState
+	readonly workflowDispatchModal: WorkflowDispatchModalState
+	readonly artifactDownloadModal: ArtifactDownloadModalState
 	readonly setCommandPalette: (next: (prev: CommandPaletteState) => CommandPaletteState) => void
 	readonly setOpenRepositoryModal: (next: OpenRepositoryModalState | ((prev: OpenRepositoryModalState) => OpenRepositoryModalState)) => void
 	readonly editThemeQuery: (transform: (query: string) => string) => void
@@ -29,6 +47,12 @@ export interface UsePasteRouterInput {
 	readonly setLabelModal: (next: (prev: LabelModalState) => LabelModalState) => void
 	readonly setChangedFilesModal: (next: (prev: ChangedFilesModalState) => ChangedFilesModalState) => void
 	readonly setFilterDraft: (next: (prev: string) => string) => void
+	readonly setReleaseEditorModal: (next: (prev: ReleaseEditorModalState) => ReleaseEditorModalState) => void
+	readonly setItemEditorModal: (next: (prev: ItemEditorModalState) => ItemEditorModalState) => void
+	readonly setMetadataSelectorModal: (next: (prev: MetadataSelectorModalState) => MetadataSelectorModalState) => void
+	readonly setBulkEditorModal: (next: (prev: BulkEditorModalState) => BulkEditorModalState) => void
+	readonly setWorkflowDispatchModal: (next: (prev: WorkflowDispatchModalState) => WorkflowDispatchModalState) => void
+	readonly setArtifactDownloadModal: (next: (prev: ArtifactDownloadModalState) => ArtifactDownloadModalState) => void
 }
 
 /**
@@ -49,6 +73,18 @@ export const usePasteRouter = ({
 	labelModalActive,
 	changedFilesModalActive,
 	filterMode,
+	releaseEditorModalActive,
+	itemEditorModalActive,
+	metadataSelectorModalActive,
+	bulkEditorModalActive,
+	workflowDispatchModalActive,
+	artifactDownloadModalActive,
+	releaseEditorModal,
+	itemEditorModal,
+	metadataSelectorModal,
+	bulkEditorModal,
+	workflowDispatchModal,
+	artifactDownloadModal,
 	setCommandPalette,
 	setOpenRepositoryModal,
 	editThemeQuery,
@@ -56,6 +92,12 @@ export const usePasteRouter = ({
 	setLabelModal,
 	setChangedFilesModal,
 	setFilterDraft,
+	setReleaseEditorModal,
+	setItemEditorModal,
+	setMetadataSelectorModal,
+	setBulkEditorModal,
+	setWorkflowDispatchModal,
+	setArtifactDownloadModal,
 }: UsePasteRouterInput): void => {
 	const insertPastedText = (text: string): boolean => {
 		if (text.length === 0) return false
@@ -65,6 +107,53 @@ export const usePasteRouter = ({
 		}
 		if (openRepositoryModalActive) {
 			setOpenRepositoryModal((current) => ({ ...current, query: current.query + singleLineText(text), error: null }))
+			return true
+		}
+		if (workflowDispatchModalActive && !workflowDispatchModal.running && !workflowDispatchModal.loadingInputs) {
+			const pasted = singleLineText(text)
+			if (workflowDispatchModal.focusIndex === 1) {
+				setWorkflowDispatchModal((current) => ({ ...current, ref: current.ref + pasted, error: null }))
+				return true
+			}
+			const field = workflowDispatchModal.inputs[workflowDispatchModal.focusIndex - 2]
+			if (!field || field.type === "boolean" || field.type === "choice") return false
+			setWorkflowDispatchModal((current) => ({
+				...current,
+				values: { ...current.values, [field.name]: String(current.values[field.name] ?? field.defaultValue ?? "") + pasted },
+				error: null,
+			}))
+			return true
+		}
+		if (artifactDownloadModalActive && !artifactDownloadModal.running && artifactDownloadModal.focus === "destination") {
+			setArtifactDownloadModal((current) => ({ ...current, destination: current.destination + singleLineText(text), error: null }))
+			return true
+		}
+		if (itemEditorModalActive && !itemEditorModal.running) {
+			if (itemEditorModal.focus === "draft") return false
+			setItemEditorModal((current) => {
+				const field = current.focus as Exclude<ItemEditorModalState["focus"], "draft">
+				const previous = current[field]
+				if (typeof previous !== "string") return current
+				const pasted = field === "body" ? text.replace(/\r\n?/g, "\n") : singleLineText(text)
+				return { ...current, [field]: previous + pasted, error: null }
+			})
+			return true
+		}
+		if (metadataSelectorModalActive && !metadataSelectorModal.running) {
+			setMetadataSelectorModal((current) => ({ ...current, query: current.query + singleLineText(text), selectedIndex: 0 }))
+			return true
+		}
+		if (bulkEditorModalActive && !bulkEditorModal.running && bulkEditorModal.focus === "value") {
+			setBulkEditorModal((current) => ({ ...current, value: current.value + singleLineText(text), error: null }))
+			return true
+		}
+		if (releaseEditorModalActive && !releaseEditorModal.running) {
+			if (releaseEditorModal.focus === "isDraft" || releaseEditorModal.focus === "isPrerelease") return false
+			setReleaseEditorModal((current) => {
+				const field = current.focus as "tagName" | "name" | "body" | "targetCommitish"
+				const pasted = field === "body" ? text.replace(/\r\n?/g, "\n") : singleLineText(text)
+				return { ...current, [field]: current[field] + pasted, error: null }
+			})
 			return true
 		}
 		if (themeModalActive && themeModal.filterMode) {

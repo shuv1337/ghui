@@ -3,12 +3,16 @@ import { useCallback, useContext } from "react"
 import {
 	addPullRequestLabelAtom,
 	closePullRequestAtom,
+	createPullRequestAtom,
+	editPullRequestAtom,
+	reopenPullRequestAtom,
+	approvePullRequestAtom,
 	prewarmRepositoryDetailsAtom,
 	pruneCacheAtom,
 	removePullRequestLabelAtom,
 	toggleDraftAtom,
 } from "../ui/pullRequests/atoms.js"
-import { addIssueLabelAtom, closeIssueAtom, issuesAtom, removeIssueLabelAtom } from "../ui/issues/atoms.js"
+import { addIssueLabelAtom, closeIssueAtom, createIssueAtom, deleteIssueAtom, editIssueAtom, issuesAtom, removeIssueLabelAtom, reopenIssueAtom } from "../ui/issues/atoms.js"
 import { listIssueCommentsAtom, listPullRequestCommentsAtom } from "../ui/comments/atoms.js"
 import { openUrlAtom, submitPullRequestReviewAtom } from "../services/systemAtoms.js"
 import { readRepoRollupAtom, readWorkspacePreferencesAtom, writeWorkspacePreferencesAtom } from "../workspace/atoms.js"
@@ -33,6 +37,14 @@ export const useGitHubActions = () => {
 	const prewarmRepositoryDetails = useAtomSet(prewarmRepositoryDetailsAtom, { mode: "promise" })
 	const closePullRequest = useAtomSet(closePullRequestAtom, { mode: "promise" })
 	const closeIssue = useAtomSet(closeIssueAtom, { mode: "promise" })
+	const createIssue = useAtomSet(createIssueAtom, { mode: "promise" })
+	const editIssue = useAtomSet(editIssueAtom, { mode: "promise" })
+	const reopenIssue = useAtomSet(reopenIssueAtom, { mode: "promise" })
+	const deleteIssue = useAtomSet(deleteIssueAtom, { mode: "promise" })
+	const createPullRequest = useAtomSet(createPullRequestAtom, { mode: "promise" })
+	const editPullRequest = useAtomSet(editPullRequestAtom, { mode: "promise" })
+	const reopenPullRequest = useAtomSet(reopenPullRequestAtom, { mode: "promise" })
+	const approvePullRequest = useAtomSet(approvePullRequestAtom, { mode: "promise" })
 	const registry = useContext(RegistryContext)
 	const refreshIssues = useCallback(() => registry.refresh(issuesAtom), [registry])
 	const submitPullRequestReview = useAtomSet(submitPullRequestReviewAtom, { mode: "promise" })
@@ -52,6 +64,14 @@ export const useGitHubActions = () => {
 		prewarmRepositoryDetails,
 		closePullRequest,
 		closeIssue,
+		createIssue,
+		editIssue,
+		reopenIssue,
+		deleteIssue,
+		createPullRequest,
+		editPullRequest,
+		reopenPullRequest,
+		approvePullRequest,
 		refreshIssues,
 		submitPullRequestReview,
 		openUrl,

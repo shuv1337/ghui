@@ -24,6 +24,7 @@ interface HintsContext {
 	readonly commentsViewOnRealComment: boolean
 	readonly commentsViewCanEditSelected: boolean
 	readonly commentsViewCount: number
+	readonly selectedItemCount: number
 	readonly hasSelection: boolean
 	readonly canOpenDetails: boolean
 	readonly canOpenRepository: boolean
@@ -134,6 +135,9 @@ const defaultHints = (ctx: HintsContext): readonly HintItem[] => {
 		{ key: "enter", label: "details", when: ctx.canOpenDetails },
 		{ key: "c", label: "comments", when: ctx.canOpenComments },
 		{ key: "d", label: "diff", when: ctx.canOpenDiff },
+		{ key: String(ctx.selectedItemCount), label: "selected", when: ctx.selectedItemCount > 0, keyFg: colors.count },
+		{ key: "space", label: "select", when: ctx.hasSelection },
+		{ key: "b", label: "bulk", when: ctx.selectedItemCount > 0 },
 		{ key: "ctrl-p", label: "commands" },
 	]
 }

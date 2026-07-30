@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import * as Atom from "effect/unstable/reactivity/Atom"
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import { errorMessage } from "../errors.js"
 import { BrowserOpener } from "../services/BrowserOpener.js"
 import { Clipboard } from "../services/Clipboard.js"
@@ -8,21 +9,45 @@ import { GitHubService } from "../services/GitHubService.js"
 import { saveStoredDiffWhitespaceMode } from "../themeStore.js"
 import { commentsViewActiveAtom, selectedCommentKeyAtom } from "../ui/comments/atoms.js"
 import { detailFullViewAtom, detailScrollOffsetAtom } from "../ui/detail/atoms.js"
-import { diffCommentRangeStartIndexAtom, diffFullViewAtom, diffRenderViewAtom, diffWhitespaceModeAtom, diffWrapModeAtom } from "../ui/diff/atoms.js"
-import { pullRequestRunsFor, runDetailSelectionAtom, runsFullViewAtom, runsKey, runsListSelectionAtom, selectedRunIdAtom } from "../ui/runs/atoms.js"
+import { diffCommentRangeStartIndexAtom, diffFullViewAtom, diffRenderViewAtom, diffWhitespaceModeAtom, diffWrapModeAtom, selectedPendingReviewAtom } from "../ui/diff/atoms.js"
+import {
+	pullRequestRunsFor,
+	repositoryRunsFor,
+	repositoryActionsStatusFilterAtom,
+	repositoryActionsWorkflowFilterAtom,
+	repositoryWorkflowsFor,
+	runDetailSelectionAtom,
+	runsFullViewAtom,
+	runsKey,
+	runsListSelectionAtom,
+	selectedRepositoryRunAtom,
+	selectedRunIdAtom,
+} from "../ui/runs/atoms.js"
 import { filterDraftAtom, filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
-import { selectedIssueAtom } from "../ui/issues/atoms.js"
+import { allIssuesAtom, issueOverridesAtom, issuesAtom, selectedIssueAtom } from "../ui/issues/atoms.js"
 import { activeModalAtom } from "../ui/modals/atoms.js"
 import { submitReviewOptions } from "../ui/modals/shared.js"
 import { initialCommandPaletteState, initialCommentModalState, initialOpenRepositoryModalState, Modal } from "../ui/modals/types.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
 import type { PullRequestUserQueueMode } from "../domain.js"
 import { pullRequestQueueModes } from "../domain.js"
-import { labelCacheAtom, selectedPullRequestAtom } from "../ui/pullRequests/atoms.js"
+import {
+	displayedPullRequestsAtom,
+	labelCacheAtom,
+	pullRequestOverridesAtom,
+	pullRequestsAtom,
+	repositoryDetailsCacheAtom,
+	selectedPullRequestAtom,
+} from "../ui/pullRequests/atoms.js"
+import { lastBulkRetrySpecAtom, lastBulkRetryUrlsAtom, selectedItemUrlsAtom } from "../item/selection.js"
+import { selectedBranchAtom, selectedEnvironmentAtom, selectedMilestoneAtom } from "../surfaces/resource/atoms.js"
+import { notificationSelectedIdsAtom, selectedNotificationAtom } from "../surfaces/notification/atoms.js"
 import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
-import { type WorkspaceSurface, workspaceSurfaceLabels, workspaceSurfaces } from "../workspaceSurfaces.js"
+import { type WorkspaceSurface, workspaceSurfaceRegistry } from "../workspaceSurfaces.js"
 import {
 	changedFilesReasonAtom,
+	bulkRetryReasonAtom,
+	bulkSelectionReasonAtom,
 	changedFilesSubtitleAtom,
 	detailCloseDisabledReasonAtom,
 	diffCloseDisabledReasonAtom,
@@ -36,9 +61,12 @@ import {
 	diffToggleRangeTitleAtom,
 	filterClearDisabledReasonAtom,
 	filterTitleAtom,
+	filterUnsupportedReasonAtom,
 	issueSelectedReasonAtom,
 	issueSurfaceReasonAtom,
 	noOpenIssueReasonAtom,
+	noClosedIssueReasonAtom,
+	noClosedPullRequestReasonAtom,
 	loadMoreDisabledReasonAtom,
 	loadMoreSubtitleAtom,
 	noOpenPullRequestReasonAtom,
@@ -48,6 +76,7 @@ import {
 	pullRequestRefreshTitleAtom,
 	pullRequestSurfaceReasonAtom,
 	repositoryOpenSubtitleAtom,
+	repositoryItemCreateReasonAtom,
 	selectedCommentReasonAtom,
 	selectedCommentSubjectAtom,
 	selectedDiffLineReasonAtom,
@@ -62,11 +91,17 @@ import {
 	repositoryViewSubtitleAtom,
 	repositoryViewTitleAtom,
 	runsCloseDisabledReasonAtom,
+	releaseSelectedReasonAtom,
+	releaseSurfaceReasonAtom,
+	selectedReleaseLabelAtom,
 	workspaceSurfaceAlreadyActiveReasonAtom,
 	workspaceSurfaceSubtitleAtom,
 } from "./derivations.js"
 import { invokeHandoff } from "./handoffs.js"
 import { defineCommand, type CommandDefinition } from "./registry.js"
+import { configPath, readStoredConfig, resetAllApplicationSettings, resetSurfaceViewConfig, saveSurfaceViewPreset } from "../configStore.js"
+import { diagnoseKeybindingOverrides, keymapCommandAliases } from "../settings/keybindings.js"
+import { normalizeSurfaceView, surfaceColumnSchemas } from "../settings/viewConfig.js"
 
 // Most commands fall into one of three shapes:
 //   1. "Open this modal": yield* Atom.set(activeModalAtom, Modal.X(...))
@@ -79,6 +114,24 @@ import { defineCommand, type CommandDefinition } from "./registry.js"
 
 const queueModeHandoffKey = (mode: PullRequestUserQueueMode) =>
 	mode === "authored" ? ("viewAuthored" as const) : mode === "review" ? ("viewReview" as const) : mode === "assigned" ? ("viewAssigned" as const) : ("viewMentioned" as const)
+
+const pendingReviewReasonAtom = Atom.make((get) => (get(selectedPendingReviewAtom)?.comments.length ? null : "No pending review comments"))
+const noRepositoryRunReasonAtom = Atom.make((get) => (get(selectedRepositoryRunAtom) ? null : "No workflow run selected"))
+const resourceSurfaceReasonAtom = (surface: "branches" | "milestones" | "environments" | "runners") =>
+	Atom.make((get) => (get(workspaceSurfaceAtom) === surface ? null : `Open the ${surface} surface`))
+const branchSelectedReasonAtom = Atom.make((get) => (get(selectedBranchAtom) ? null : "No branch selected"))
+const milestoneSelectedReasonAtom = Atom.make((get) => (get(selectedMilestoneAtom) ? null : "No milestone selected"))
+const environmentSelectedReasonAtom = Atom.make((get) => (get(selectedEnvironmentAtom) ? null : "No environment selected"))
+const notificationSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "notifications" ? null : "Open the notifications surface"))
+const notificationSelectedReasonAtom = Atom.make((get) => {
+	const notification = get(selectedNotificationAtom)
+	return !notification ? "No notification selected" : notification.url ? null : "Notification target is unavailable or was deleted"
+})
+const unreadNotificationSelectedReasonAtom = Atom.make((get) => {
+	const notification = get(selectedNotificationAtom)
+	return !notification ? "No notification selected" : notification.unread ? null : "Notification is already read"
+})
+const selectedNotificationsReasonAtom = Atom.make((get) => (get(notificationSelectedIdsAtom).length > 0 ? null : "No notifications selected"))
 
 const queueViewCommands = pullRequestQueueModes.map(
 	(mode): CommandDefinition =>
@@ -93,18 +146,18 @@ const queueViewCommands = pullRequestQueueModes.map(
 		}),
 )
 
-const workspaceSurfaceCommands = workspaceSurfaces.map((surface, index): CommandDefinition => {
-	const subtitleAtom = workspaceSurfaceSubtitleAtom(surface)
-	const disabledAtom = workspaceSurfaceAlreadyActiveReasonAtom(surface)
+const workspaceSurfaceCommands = workspaceSurfaceRegistry.map((descriptor, index): CommandDefinition => {
+	const subtitleAtom = workspaceSurfaceSubtitleAtom(descriptor.id)
+	const disabledAtom = workspaceSurfaceAlreadyActiveReasonAtom(descriptor.id)
 	return defineCommand({
-		id: `workspace.${surface}`,
-		title: `Show ${workspaceSurfaceLabels[surface]}`,
+		id: `workspace.${descriptor.id}`,
+		title: `Show ${descriptor.label}`,
 		scope: "View",
 		subtitle: subtitleAtom,
-		shortcut: `${index + 1}`,
-		keywords: [workspaceSurfaceLabels[surface], "workspace", "surface", "tab"],
+		...(index < 9 ? { shortcut: `${index + 1}` } : {}),
+		keywords: [descriptor.label, "workspace", "surface", "tab"],
 		disabledReason: disabledAtom,
-		run: switchWorkspaceSurfaceEffect(surface),
+		run: switchWorkspaceSurfaceEffect(descriptor.id),
 	})
 })
 
@@ -125,6 +178,74 @@ function switchWorkspaceSurfaceEffect(surface: WorkspaceSurface) {
 		yield* Atom.set(noticeAtom, null)
 	})
 }
+
+const openMetadataSelectorEffect = (kind: "assignees" | "reviewers" | "milestone" | "base") =>
+	Effect.gen(function* () {
+		const surface = yield* Atom.get(workspaceSurfaceAtom)
+		const subject = surface === "issues" ? yield* Atom.get(selectedIssueAtom) : yield* Atom.get(selectedPullRequestAtom)
+		if (!subject) return
+		const target = {
+			kind: surface === "issues" ? ("issue" as const) : ("pullRequest" as const),
+			repository: subject.repository,
+			number: subject.number,
+			url: subject.url,
+		}
+		yield* Atom.set(
+			activeModalAtom,
+			Modal.MetadataSelector({
+				kind,
+				target,
+				query: "",
+				selectedIndex: 0,
+				selectedIds: [],
+				options: [],
+				loading: true,
+				running: false,
+				error: null,
+			}),
+		)
+		const options = yield* GitHubService.use((github) =>
+			kind === "assignees"
+				? github
+						.listAssignees(subject.repository)
+						.pipe(Effect.map((users) => users.map((user) => ({ id: user.login, label: `@${user.login}`, description: user.name ?? "deleted or unnamed user" }))))
+				: kind === "reviewers"
+					? github
+							.listReviewers(subject.repository)
+							.pipe(Effect.map((users) => users.map((user) => ({ id: user.login, label: `@${user.login}`, description: user.name ?? "unnamed collaborator" }))))
+					: kind === "milestone"
+						? github.listMilestones(subject.repository).pipe(
+								Effect.map((milestones) =>
+									milestones.map((milestone) => ({
+										id: milestone.title,
+										label: milestone.title,
+										description: `${milestone.state}${milestone.dueOn ? ` · due ${milestone.dueOn.toISOString().slice(0, 10)}` : ""}`,
+									})),
+								),
+							)
+						: github
+								.listBranches(subject.repository)
+								.pipe(
+									Effect.map((branches) =>
+										branches.map((branch) => ({ id: branch.name, label: branch.name, description: `${branch.sha.slice(0, 8)}${branch.protected ? " · protected" : ""}` })),
+									),
+								),
+		).pipe(
+			Effect.catch((error) =>
+				Effect.gen(function* () {
+					yield* Atom.update(activeModalAtom, (current) =>
+						Modal.$is("MetadataSelector")(current) && current.kind === kind ? Modal.MetadataSelector({ ...current, loading: false, error: errorMessage(error) }) : current,
+					)
+					return [] as const
+				}),
+			),
+		)
+		yield* Atom.update(activeModalAtom, (current) =>
+			Modal.$is("MetadataSelector")(current) && current.kind === kind && current.target.url === subject.url
+				? Modal.MetadataSelector({ ...current, options, loading: false })
+				: current,
+		)
+	})
 
 const flashErrorEffect = (error: unknown) =>
 	Effect.gen(function* () {
@@ -148,6 +269,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 		subtitle: "Search the visible surface",
 		shortcut: "/",
 		keywords: ["search"],
+		disabledReason: filterUnsupportedReasonAtom,
 		run: Effect.gen(function* () {
 			const query = yield* Atom.get(filterQueryAtom)
 			yield* Atom.set(filterDraftAtom, query)
@@ -166,6 +288,84 @@ export const globalCommands: readonly CommandDefinition[] = [
 			yield* Atom.set(filterDraftAtom, "")
 			yield* Atom.set(filterModeAtom, false)
 		}),
+	}),
+	defineCommand({
+		id: "view.configure",
+		title: "Cycle saved view layout",
+		scope: "View",
+		subtitle: "Cycle default, compact, grouped, and filtered presets for this surface",
+		shortcut: "v",
+		keywords: ["columns", "sort", "group", "value filter", "saved view"],
+		run: Effect.gen(function* () {
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			const stored = yield* Effect.tryPromise(() => readStoredConfig())
+			const schema = surfaceColumnSchemas[surface]
+			const current = normalizeSurfaceView(surface, stored.config.surfaceViews[surface]).view
+			const currentPreset =
+				typeof stored.config.viewPreset === "object" && stored.config.viewPreset !== null ? Number((stored.config.viewPreset as Record<string, unknown>)[surface] ?? 0) : 0
+			const nextPreset = (currentPreset + 1) % 4
+			const groupColumn = schema.find((column, index) => index > 0 && column.groupable)?.id ?? null
+			const sortColumn = [...schema].reverse().find((column) => column.sortable)?.id
+			const filters: Readonly<Record<string, readonly string[]>> =
+				nextPreset === 3
+					? surface === "notifications"
+						? { unread: ["true"] }
+						: surface === "milestones"
+							? { state: ["open"] }
+							: surface === "actions"
+								? { status: ["in_progress"] }
+								: {}
+					: {}
+			const view =
+				nextPreset === 0
+					? normalizeSurfaceView(surface, undefined).view
+					: {
+							...current,
+							visibleColumns: nextPreset === 1 ? schema.slice(0, Math.max(1, schema.length - 1)).map((column) => column.id) : schema.map((column) => column.id),
+							groupBy: nextPreset >= 2 ? groupColumn : null,
+							...(sortColumn ? { sort: { field: sortColumn, direction: "descending" as const } } : {}),
+							valueFilters: filters,
+						}
+			yield* Effect.tryPromise(() => saveSurfaceViewPreset(surface, view, nextPreset))
+			yield* Atom.set(noticeAtom, `Saved ${surface} view preset ${nextPreset + 1}/4`)
+		}).pipe(Effect.catch(flashErrorEffect)),
+	}),
+	defineCommand({
+		id: "settings.resetSurface",
+		title: "Reset current Surface view",
+		scope: "System",
+		keywords: ["settings", "columns", "sort", "group", "filters", "defaults"],
+		run: Effect.gen(function* () {
+			const surface = yield* Atom.get(workspaceSurfaceAtom)
+			yield* Effect.tryPromise(() => resetSurfaceViewConfig(surface))
+			yield* Atom.set(noticeAtom, `Reset ${surface} view`)
+		}).pipe(Effect.catch(flashErrorEffect)),
+	}),
+	defineCommand({
+		id: "settings.keybindings",
+		title: "Diagnose configured keybindings",
+		scope: "System",
+		subtitle: configPath(),
+		keywords: ["settings", "shortcuts", "keys", "conflicts"],
+		run: Effect.gen(function* () {
+			const stored = yield* Effect.tryPromise(() => readStoredConfig())
+			const diagnostics = diagnoseKeybindingOverrides(stored.config.keybindings, new Set(Object.keys(keymapCommandAliases)))
+			const summary =
+				diagnostics.length === 0
+					? `Keybindings valid · ${configPath()}`
+					: `${diagnostics.length} keybinding diagnostic${diagnostics.length === 1 ? "" : "s"} · ${diagnostics[0]!.message}`
+			yield* Atom.set(noticeAtom, summary)
+		}).pipe(Effect.catch(flashErrorEffect)),
+	}),
+	defineCommand({
+		id: "settings.resetAll",
+		title: "Reset saved views and keybindings",
+		scope: "System",
+		keywords: ["settings", "defaults", "reset"],
+		run: Effect.tryPromise(() => resetAllApplicationSettings()).pipe(
+			Effect.tap(() => Atom.set(noticeAtom, "Reset saved views and keybindings")),
+			Effect.catch(flashErrorEffect),
+		),
 	}),
 
 	// === Workspace surface switches ===
@@ -300,6 +500,157 @@ export const globalCommands: readonly CommandDefinition[] = [
 			yield* Atom.refresh(pullRequestRunsFor(runsKey(pr)))
 		}),
 	}),
+	defineCommand({
+		id: "actions.refresh",
+		title: "Refresh repository Actions",
+		scope: "Actions",
+		disabledReason: Atom.make((get) => (get(selectedRepositoryAtom) ? null : "Open a repository first")),
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			if (repository) yield* Atom.refresh(repositoryRunsFor(repository))
+		}),
+	}),
+	defineCommand({
+		id: "actions.retry",
+		title: "Retry workflow run",
+		scope: "Actions",
+		shortcut: "shift+r",
+		disabledReason: noRepositoryRunReasonAtom,
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			const run = yield* Atom.get(selectedRepositoryRunAtom)
+			if (!repository || !run) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.RunAction({ action: "retry", repository, runId: run.id, title: run.displayTitle, failedOnly: run.conclusion === "failure", running: false, error: null }),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "actions.cancel",
+		title: "Cancel workflow run",
+		scope: "Actions",
+		shortcut: "x",
+		disabledReason: Atom.make((get) => {
+			const run = get(selectedRepositoryRunAtom)
+			return !run ? "No workflow run selected" : run.status === "completed" ? "The selected run already completed" : null
+		}),
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			const run = yield* Atom.get(selectedRepositoryRunAtom)
+			if (!repository || !run || run.status === "completed") return
+			yield* Atom.set(activeModalAtom, Modal.RunAction({ action: "cancel", repository, runId: run.id, title: run.displayTitle, failedOnly: false, running: false, error: null }))
+		}),
+	}),
+	defineCommand({
+		id: "actions.dispatch",
+		title: "Dispatch workflow",
+		scope: "Actions",
+		shortcut: "d",
+		disabledReason: Atom.make((get) => (get(selectedRepositoryAtom) ? null : "Open a repository first")),
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			if (!repository) return
+			const defaultRef = (yield* Atom.get(repositoryDetailsCacheAtom))[repository]?.defaultBranch ?? "main"
+			const workflowsResult = yield* Atom.get(repositoryWorkflowsFor(repository))
+			const workflows = AsyncResult.isSuccess(workflowsResult) ? workflowsResult.value.filter((workflow) => workflow.state === "active") : []
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.WorkflowDispatch({
+					repository,
+					workflows,
+					workflowIndex: 0,
+					inputs: [],
+					values: {},
+					ref: defaultRef,
+					focusIndex: 0,
+					loadingInputs: workflows.length > 0,
+					running: false,
+					error: workflows.length === 0 ? "No active workflows found." : null,
+				}),
+			)
+			const workflow = workflows[0]
+			if (!workflow) return
+			const inputResult = yield* GitHubService.use((github) => github.getWorkflowInputs(repository, String(workflow.id))).pipe(
+				Effect.match({
+					onFailure: (error) => ({ inputs: [] as const, error: errorMessage(error) }),
+					onSuccess: (inputs) => ({ inputs, error: null }),
+				}),
+			)
+			const inputs = inputResult.inputs
+			const values = Object.fromEntries(inputs.flatMap((input) => (input.defaultValue === null ? [] : [[input.name, input.defaultValue]])))
+			yield* Atom.update(activeModalAtom, (modal) =>
+				modal._tag === "WorkflowDispatch" && modal.repository === repository && modal.workflows[modal.workflowIndex]?.id === workflow.id
+					? Modal.WorkflowDispatch({ ...modal, inputs, values, loadingInputs: false, error: inputResult.error })
+					: modal,
+			)
+		}),
+	}),
+	defineCommand({
+		id: "actions.downloadArtifact",
+		title: "Download workflow artifact",
+		scope: "Actions",
+		shortcut: "a",
+		disabledReason: noRepositoryRunReasonAtom,
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			const run = yield* Atom.get(selectedRepositoryRunAtom)
+			if (!repository || !run) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ArtifactDownload({
+					repository,
+					runId: run.id,
+					artifacts: [],
+					selectedIndex: 0,
+					destination: "",
+					focus: "artifact",
+					loading: true,
+					running: false,
+					error: null,
+				}),
+			)
+			const result = yield* GitHubService.use((github) => github.listArtifacts(repository, run.id)).pipe(
+				Effect.match({
+					onFailure: (error) => ({ artifacts: [] as const, error: errorMessage(error) }),
+					onSuccess: (artifacts) => ({ artifacts, error: artifacts.length === 0 ? "No artifacts for this run." : null }),
+				}),
+			)
+			yield* Atom.update(activeModalAtom, (modal) =>
+				modal._tag === "ArtifactDownload" && modal.repository === repository && modal.runId === run.id
+					? Modal.ArtifactDownload({ ...modal, artifacts: result.artifacts, loading: false, error: result.error })
+					: modal,
+			)
+		}),
+	}),
+	defineCommand({
+		id: "actions.cycleStatusFilter",
+		title: "Cycle Actions status filter",
+		scope: "Actions",
+		shortcut: "f",
+		disabledReason: Atom.make((get) => (get(selectedRepositoryAtom) ? null : "Open a repository first")),
+		run: Effect.gen(function* () {
+			const options = ["all", "in_progress", "failure", "success", "cancelled"] as const
+			const current = yield* Atom.get(repositoryActionsStatusFilterAtom)
+			yield* Atom.set(repositoryActionsStatusFilterAtom, options[(options.indexOf(current) + 1) % options.length]!)
+		}),
+	}),
+	defineCommand({
+		id: "actions.cycleWorkflowFilter",
+		title: "Cycle Actions workflow filter",
+		scope: "Actions",
+		shortcut: "w",
+		disabledReason: Atom.make((get) => (get(selectedRepositoryAtom) ? null : "Open a repository first")),
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			if (!repository) return
+			const result = yield* Atom.get(repositoryRunsFor(repository))
+			const names = AsyncResult.isSuccess(result) ? [...new Set(result.value.map((run) => run.workflowName))].sort((left, right) => left.localeCompare(right)) : []
+			const current = yield* Atom.get(repositoryActionsWorkflowFilterAtom)
+			const options: readonly (string | null)[] = [null, ...names]
+			yield* Atom.set(repositoryActionsWorkflowFilterAtom, options[(options.indexOf(current) + 1) % options.length] ?? null)
+		}),
+	}),
 	// === Modal openers (selection-seeded) ===
 	defineCommand({
 		id: "repository.open",
@@ -310,6 +661,223 @@ export const globalCommands: readonly CommandDefinition[] = [
 		run: Effect.gen(function* () {
 			const repository = yield* Atom.get(selectedRepositoryAtom)
 			yield* Atom.set(activeModalAtom, Modal.OpenRepository({ ...initialOpenRepositoryModalState, query: repository ?? "" }))
+		}),
+	}),
+	defineCommand({
+		id: "issue.create",
+		title: "Create issue",
+		scope: "Issue",
+		subtitle: "Create an issue in the open repository",
+		shortcut: "n",
+		disabledReason: repositoryItemCreateReasonAtom,
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			if (!repository || (yield* Atom.get(workspaceSurfaceAtom)) !== "issues") return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ItemEditor({
+					kind: "issue",
+					mode: "create",
+					repository,
+					number: null,
+					url: null,
+					title: "",
+					body: "",
+					base: "main",
+					head: "",
+					draft: false,
+					labels: "",
+					assignees: "",
+					reviewers: "",
+					milestone: "",
+					focus: "title",
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "issue.edit",
+		title: "Edit issue",
+		scope: "Issue",
+		subtitle: selectedIssueLabelAtom,
+		shortcut: "e",
+		disabledReason: issueSelectedReasonAtom,
+		run: Effect.gen(function* () {
+			const issue = yield* Atom.get(selectedIssueAtom)
+			if (!issue) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ItemEditor({
+					kind: "issue",
+					mode: "edit",
+					repository: issue.repository,
+					number: issue.number,
+					url: issue.url,
+					title: issue.title,
+					body: issue.body,
+					base: "main",
+					head: "",
+					draft: false,
+					labels: issue.labels.map((label) => label.name).join(", "),
+					assignees: "",
+					reviewers: "",
+					milestone: "",
+					focus: "title",
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "issue.reopen",
+		title: "Reopen issue",
+		scope: "Issue",
+		subtitle: selectedIssueLabelAtom,
+		disabledReason: noClosedIssueReasonAtom,
+		run: Effect.gen(function* () {
+			const issue = yield* Atom.get(selectedIssueAtom)
+			if (!issue || issue.state !== "closed") return
+			yield* Atom.update(issueOverridesAtom, (current) => ({ ...current, [issue.url]: { ...issue, state: "open" as const } }))
+			yield* GitHubService.use((github) => github.reopenIssue(issue.repository, issue.number)).pipe(
+				Effect.tap(() => Atom.refresh(issuesAtom)),
+				Effect.catch((error) =>
+					Effect.gen(function* () {
+						yield* Atom.update(issueOverridesAtom, (current) => ({ ...current, [issue.url]: issue }))
+						yield* Atom.set(noticeAtom, errorMessage(error))
+					}),
+				),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "issue.delete",
+		title: "Delete issue",
+		scope: "Issue",
+		subtitle: selectedIssueLabelAtom,
+		disabledReason: issueSelectedReasonAtom,
+		run: Effect.gen(function* () {
+			const issue = yield* Atom.get(selectedIssueAtom)
+			if (!issue) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.Close({
+					kind: "issue",
+					action: "delete",
+					repository: issue.repository,
+					number: issue.number,
+					title: issue.title,
+					url: issue.url,
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "pullRequest.create",
+		title: "Create pull request",
+		scope: "Pull request",
+		subtitle: "Create a pull request in the open repository",
+		shortcut: "n",
+		disabledReason: repositoryItemCreateReasonAtom,
+		run: Effect.gen(function* () {
+			const repository = yield* Atom.get(selectedRepositoryAtom)
+			if (!repository || (yield* Atom.get(workspaceSurfaceAtom)) !== "pullRequests") return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ItemEditor({
+					kind: "pullRequest",
+					mode: "create",
+					repository,
+					number: null,
+					url: null,
+					title: "",
+					body: "",
+					base: "main",
+					head: "",
+					draft: false,
+					labels: "",
+					assignees: "",
+					reviewers: "",
+					milestone: "",
+					focus: "title",
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "pullRequest.edit",
+		title: "Edit pull request",
+		scope: "Pull request",
+		subtitle: selectedPullRequestLabelAtom,
+		shortcut: "e",
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			if (!pullRequest) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ItemEditor({
+					kind: "pullRequest",
+					mode: "edit",
+					repository: pullRequest.repository,
+					number: pullRequest.number,
+					url: pullRequest.url,
+					title: pullRequest.title,
+					body: pullRequest.body,
+					base: pullRequest.baseRefName,
+					head: pullRequest.headRefName,
+					draft: pullRequest.reviewStatus === "draft",
+					labels: pullRequest.labels.map((label) => label.name).join(", "),
+					assignees: "",
+					reviewers: "",
+					milestone: "",
+					focus: "title",
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "pullRequest.reopen",
+		title: "Reopen pull request",
+		scope: "Pull request",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: noClosedPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			if (!pullRequest || pullRequest.state !== "closed") return
+			yield* Atom.update(pullRequestOverridesAtom, (current) => ({ ...current, [pullRequest.url]: { ...pullRequest, state: "open" as const } }))
+			yield* GitHubService.use((github) => github.reopenPullRequest(pullRequest.repository, pullRequest.number)).pipe(
+				Effect.tap(() => Atom.refresh(pullRequestsAtom)),
+				Effect.catch((error) =>
+					Effect.gen(function* () {
+						yield* Atom.update(pullRequestOverridesAtom, (current) => ({ ...current, [pullRequest.url]: pullRequest }))
+						yield* Atom.set(noticeAtom, errorMessage(error))
+					}),
+				),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "pullRequest.approve",
+		title: "Approve pull request",
+		scope: "Pull request",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: noOpenPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			if (!pullRequest || pullRequest.state !== "open") return
+			yield* GitHubService.use((github) => github.approvePullRequest(pullRequest.repository, pullRequest.number)).pipe(
+				Effect.tap(() => Atom.update(pullRequestOverridesAtom, (current) => ({ ...current, [pullRequest.url]: { ...pullRequest, reviewStatus: "approved" as const } }))),
+				Effect.catch((error) => Atom.set(noticeAtom, errorMessage(error))),
+			)
 		}),
 	}),
 	defineCommand({
@@ -326,6 +894,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 				activeModalAtom,
 				Modal.Close({
 					kind: "pullRequest",
+					action: "close",
 					repository: pr.repository,
 					number: pr.number,
 					title: pr.title,
@@ -351,6 +920,7 @@ export const globalCommands: readonly CommandDefinition[] = [
 				activeModalAtom,
 				Modal.Close({
 					kind: "issue",
+					action: "close",
 					repository: issue.repository,
 					number: issue.number,
 					title: issue.title,
@@ -483,6 +1053,147 @@ export const globalCommands: readonly CommandDefinition[] = [
 			)
 		}),
 	}),
+	defineCommand({
+		id: "item.assignees",
+		title: "Manage assignees",
+		scope: "Labels",
+		subtitle: selectedItemLabelAtom,
+		disabledReason: noSelectedItemReasonAtom,
+		keywords: ["assign", "people", "users"],
+		run: openMetadataSelectorEffect("assignees"),
+	}),
+	defineCommand({
+		id: "pullRequest.reviewers",
+		title: "Manage reviewers",
+		scope: "Labels",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: noPullRequestReasonAtom,
+		keywords: ["review request", "collaborators"],
+		run: openMetadataSelectorEffect("reviewers"),
+	}),
+	defineCommand({
+		id: "item.milestone",
+		title: "Set milestone",
+		scope: "Labels",
+		subtitle: selectedItemLabelAtom,
+		disabledReason: noSelectedItemReasonAtom,
+		keywords: ["milestone", "due date"],
+		run: openMetadataSelectorEffect("milestone"),
+	}),
+	defineCommand({
+		id: "pullRequest.base",
+		title: "Change base branch",
+		scope: "Labels",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: noPullRequestReasonAtom,
+		keywords: ["base", "target branch"],
+		run: openMetadataSelectorEffect("base"),
+	}),
+	defineCommand({
+		id: "items.select",
+		title: "Toggle item selection",
+		scope: "Labels",
+		subtitle: selectedItemLabelAtom,
+		shortcut: "space",
+		disabledReason: noSelectedItemReasonAtom,
+		keywords: ["multi select", "bulk"],
+		run: Effect.gen(function* () {
+			const subject = yield* Atom.get(selectedCommentSubjectAtom)
+			if (!subject) return
+			const selected = yield* Atom.get(selectedItemUrlsAtom)
+			const next = selected.includes(subject.url) ? selected.filter((url) => url !== subject.url) : [...selected, subject.url]
+			yield* Atom.set(selectedItemUrlsAtom, next)
+			yield* Atom.set(noticeAtom, `${next.length} item${next.length === 1 ? "" : "s"} selected`)
+		}),
+	}),
+	defineCommand({
+		id: "items.clearSelection",
+		title: "Clear item selection",
+		scope: "Labels",
+		subtitle: "Clear the current bulk selection",
+		disabledReason: bulkSelectionReasonAtom,
+		run: Effect.gen(function* () {
+			yield* Atom.set(selectedItemUrlsAtom, [])
+			yield* Atom.set(noticeAtom, "Item selection cleared")
+		}),
+	}),
+	defineCommand({
+		id: "items.bulkEdit",
+		title: "Bulk edit selected items",
+		scope: "Labels",
+		subtitle: Atom.make((get) => `${get(selectedItemUrlsAtom).length} selected`),
+		shortcut: "b",
+		disabledReason: bulkSelectionReasonAtom,
+		keywords: ["batch", "labels", "assignees", "milestone", "status"],
+		run: Effect.gen(function* () {
+			const selected = yield* Atom.get(selectedItemUrlsAtom)
+			const issues = yield* Atom.get(allIssuesAtom)
+			const pullRequests = yield* Atom.get(displayedPullRequestsAtom)
+			const targets = [...issues, ...pullRequests]
+				.filter((item) => selected.includes(item.url))
+				.map((item) => ({
+					kind: "commentCount" in item ? ("issue" as const) : ("pullRequest" as const),
+					repository: item.repository,
+					number: item.number,
+					url: item.url,
+					title: item.title,
+					state: item.state,
+				}))
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.BulkEditor({
+					targets,
+					action: "addLabel",
+					value: "",
+					focus: "action",
+					running: false,
+					confirming: false,
+					cancelRequested: false,
+					summary: null,
+					resultLines: [],
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "items.retryFailed",
+		title: "Retry failed bulk items",
+		scope: "Labels",
+		subtitle: Atom.make((get) => `${get(lastBulkRetryUrlsAtom).length} retryable`),
+		disabledReason: bulkRetryReasonAtom,
+		run: Effect.gen(function* () {
+			const spec = yield* Atom.get(lastBulkRetrySpecAtom)
+			if (!spec) return
+			const issues = yield* Atom.get(allIssuesAtom)
+			const pullRequests = yield* Atom.get(displayedPullRequestsAtom)
+			const targets = [...issues, ...pullRequests]
+				.filter((item) => spec.urls.includes(item.url))
+				.map((item) => ({
+					kind: "commentCount" in item ? ("issue" as const) : ("pullRequest" as const),
+					repository: item.repository,
+					number: item.number,
+					url: item.url,
+					title: item.title,
+					state: item.state,
+				}))
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.BulkEditor({
+					targets,
+					action: spec.action,
+					value: spec.value,
+					focus: "action",
+					running: false,
+					confirming: false,
+					cancelRequested: false,
+					summary: "Retrying failed items only.",
+					resultLines: [],
+					error: null,
+				}),
+			)
+		}),
+	}),
 
 	// === System / system-service commands ===
 	defineCommand({
@@ -584,6 +1295,190 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: issueSurfaceReasonAtom,
 		keywords: ["reload", "sync"],
 		run: Effect.sync(() => invokeHandoff("refreshIssues")),
+	}),
+	defineCommand({
+		id: "release.refresh",
+		title: "Refresh releases",
+		scope: "Release",
+		subtitle: "Fetch the latest releases from GitHub",
+		shortcut: "r",
+		disabledReason: releaseSurfaceReasonAtom,
+		keywords: ["reload", "sync", "tags"],
+		run: Effect.sync(() => invokeHandoff("refreshReleases")),
+	}),
+	defineCommand({
+		id: "release.create",
+		title: "Create release",
+		scope: "Release",
+		subtitle: "Publish or save a draft GitHub release",
+		shortcut: "c",
+		disabledReason: releaseSurfaceReasonAtom,
+		keywords: ["new", "publish", "tag"],
+		run: Effect.sync(() => invokeHandoff("openCreateRelease")),
+	}),
+	defineCommand({
+		id: "release.edit",
+		title: "Edit release",
+		scope: "Release",
+		subtitle: selectedReleaseLabelAtom,
+		shortcut: "e",
+		disabledReason: releaseSelectedReasonAtom,
+		keywords: ["notes", "draft", "prerelease"],
+		run: Effect.sync(() => invokeHandoff("openEditRelease")),
+	}),
+	defineCommand({
+		id: "release.delete",
+		title: "Delete release",
+		scope: "Release",
+		subtitle: selectedReleaseLabelAtom,
+		shortcut: "x",
+		disabledReason: releaseSelectedReasonAtom,
+		keywords: ["remove", "confirm"],
+		run: Effect.sync(() => invokeHandoff("openDeleteRelease")),
+	}),
+	defineCommand({
+		id: "branch.refresh",
+		title: "Refresh branches",
+		scope: "Branches",
+		shortcut: "r",
+		disabledReason: resourceSurfaceReasonAtom("branches"),
+		run: Effect.sync(() => invokeHandoff("refreshBranches")),
+	}),
+	defineCommand({
+		id: "branch.create",
+		title: "Create branch",
+		scope: "Branches",
+		shortcut: "c",
+		disabledReason: resourceSurfaceReasonAtom("branches"),
+		run: Effect.sync(() => invokeHandoff("openCreateBranch")),
+	}),
+	defineCommand({
+		id: "branch.delete",
+		title: "Delete branch",
+		scope: "Branches",
+		shortcut: "x",
+		disabledReason: branchSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("openDeleteBranch")),
+	}),
+	defineCommand({
+		id: "milestone.refresh",
+		title: "Refresh milestones",
+		scope: "Milestones",
+		shortcut: "r",
+		disabledReason: resourceSurfaceReasonAtom("milestones"),
+		run: Effect.sync(() => invokeHandoff("refreshMilestones")),
+	}),
+	defineCommand({
+		id: "milestone.create",
+		title: "Create milestone",
+		scope: "Milestones",
+		shortcut: "c",
+		disabledReason: resourceSurfaceReasonAtom("milestones"),
+		run: Effect.sync(() => invokeHandoff("openCreateMilestone")),
+	}),
+	defineCommand({
+		id: "milestone.edit",
+		title: "Edit milestone",
+		scope: "Milestones",
+		shortcut: "e",
+		disabledReason: milestoneSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("openEditMilestone")),
+	}),
+	defineCommand({
+		id: "milestone.toggleState",
+		title: "Close or reopen milestone",
+		scope: "Milestones",
+		shortcut: "s",
+		disabledReason: milestoneSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("toggleMilestoneState")),
+	}),
+	defineCommand({
+		id: "milestone.delete",
+		title: "Delete milestone",
+		scope: "Milestones",
+		shortcut: "x",
+		disabledReason: milestoneSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("openDeleteMilestone")),
+	}),
+	defineCommand({
+		id: "environment.refresh",
+		title: "Refresh environments",
+		scope: "Environments",
+		shortcut: "r",
+		disabledReason: resourceSurfaceReasonAtom("environments"),
+		run: Effect.sync(() => invokeHandoff("refreshEnvironments")),
+	}),
+	defineCommand({
+		id: "environment.open",
+		title: "Open environment in browser",
+		scope: "Environments",
+		shortcut: "o",
+		disabledReason: environmentSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("openEnvironmentInBrowser")),
+	}),
+	defineCommand({
+		id: "runner.refresh",
+		title: "Refresh runners",
+		scope: "Runners",
+		shortcut: "r",
+		disabledReason: resourceSurfaceReasonAtom("runners"),
+		run: Effect.sync(() => invokeHandoff("refreshRunners")),
+	}),
+	defineCommand({
+		id: "notification.refresh",
+		title: "Refresh notifications",
+		scope: "Notifications",
+		shortcut: "r",
+		disabledReason: notificationSurfaceReasonAtom,
+		run: Effect.sync(() => invokeHandoff("refreshNotifications")),
+	}),
+	defineCommand({
+		id: "notification.toggleReadFilter",
+		title: "Toggle unread / all notifications",
+		scope: "Notifications",
+		shortcut: "u",
+		disabledReason: notificationSurfaceReasonAtom,
+		run: Effect.sync(() => invokeHandoff("toggleNotificationReadFilter")),
+	}),
+	defineCommand({
+		id: "notification.cycleTypeFilter",
+		title: "Cycle notification type filter",
+		scope: "Notifications",
+		shortcut: "f",
+		disabledReason: notificationSurfaceReasonAtom,
+		run: Effect.sync(() => invokeHandoff("cycleNotificationTypeFilter")),
+	}),
+	defineCommand({
+		id: "notification.select",
+		title: "Toggle notification selection",
+		scope: "Notifications",
+		shortcut: "space",
+		disabledReason: unreadNotificationSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("toggleNotificationSelection")),
+	}),
+	defineCommand({
+		id: "notification.markRead",
+		title: "Mark notification read",
+		scope: "Notifications",
+		shortcut: "m",
+		disabledReason: unreadNotificationSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("markNotificationRead")),
+	}),
+	defineCommand({
+		id: "notification.markSelectedRead",
+		title: "Mark selected notifications read",
+		scope: "Notifications",
+		shortcut: "shift+m",
+		disabledReason: selectedNotificationsReasonAtom,
+		run: Effect.sync(() => invokeHandoff("markSelectedNotificationsRead")),
+	}),
+	defineCommand({
+		id: "notification.open",
+		title: "Open notification target",
+		scope: "Notifications",
+		shortcut: "o",
+		disabledReason: notificationSelectedReasonAtom,
+		run: Effect.sync(() => invokeHandoff("openNotification")),
 	}),
 	defineCommand({
 		id: "pull.load-more",
@@ -746,6 +1641,73 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: selectedDiffLineReasonAtom,
 		keywords: ["review", "reply"],
 		run: Effect.sync(() => invokeHandoff("openDiffCommentModal")),
+	}),
+	defineCommand({
+		id: "diff.suggest",
+		title: "Add suggestion on selected diff line",
+		scope: "Diff",
+		subtitle: diffCommentAnchorSubtitleAtom,
+		shortcut: "shift+s",
+		disabledReason: selectedDiffLineReasonAtom,
+		keywords: ["review", "replacement", "suggestion"],
+		run: Effect.sync(() => invokeHandoff("openDiffSuggestionModal")),
+	}),
+	defineCommand({
+		id: "review.pending",
+		title: "Open pending review",
+		scope: "Diff",
+		subtitle: Atom.make((get) => {
+			const count = get(selectedPendingReviewAtom)?.comments.length ?? 0
+			return count > 0 ? `${count} queued ${count === 1 ? "comment" : "comments"}` : "No queued comments"
+		}),
+		shortcut: "shift+p",
+		disabledReason: pendingReviewReasonAtom,
+		keywords: ["review", "queue", "draft", "pending"],
+		run: Effect.gen(function* () {
+			if (!(yield* Atom.get(selectedPendingReviewAtom))?.comments.length) return
+			yield* Atom.set(activeModalAtom, Modal.PendingReview({ selectedIndex: 0, confirmingDiscard: false, running: false, error: null }))
+		}),
+	}),
+	defineCommand({
+		id: "review.submit",
+		title: "Submit pending review",
+		scope: "Diff",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: pendingReviewReasonAtom,
+		keywords: ["review", "approve", "request changes", "comment", "pending"],
+		run: Effect.gen(function* () {
+			const pr = yield* Atom.get(selectedPullRequestAtom)
+			if (!pr || !(yield* Atom.get(selectedPendingReviewAtom))?.comments.length) return
+			const selectedIndex = Math.max(
+				0,
+				submitReviewOptions.findIndex((option) => option.event === "APPROVE"),
+			)
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.SubmitReview({
+					repository: pr.repository,
+					number: pr.number,
+					focus: "action",
+					selectedIndex,
+					body: "",
+					cursor: 0,
+					running: false,
+					error: null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "review.discard",
+		title: "Discard pending review",
+		scope: "Diff",
+		subtitle: selectedPullRequestLabelAtom,
+		disabledReason: pendingReviewReasonAtom,
+		keywords: ["review", "queue", "draft", "delete"],
+		run: Effect.gen(function* () {
+			if (!(yield* Atom.get(selectedPendingReviewAtom))?.comments.length) return
+			yield* Atom.set(activeModalAtom, Modal.PendingReview({ selectedIndex: 0, confirmingDiscard: true, running: false, error: null }))
+		}),
 	}),
 
 	// === Comment mutations ===

@@ -24,6 +24,7 @@ export interface UseCommandHandoffsInput {
 	readonly openSelectedDiffComment: () => void
 	readonly toggleDiffCommentRange: () => void
 	readonly openDiffCommentModal: () => void
+	readonly openDiffSuggestionModal: () => void
 	readonly openReplyToSelectedComment: () => void
 	readonly openEditSelectedComment: () => void
 	readonly openDeleteSelectedComment: () => void
@@ -58,6 +59,7 @@ export const useCommandHandoffs = ({
 	openSelectedDiffComment,
 	toggleDiffCommentRange,
 	openDiffCommentModal,
+	openDiffSuggestionModal,
 	openReplyToSelectedComment,
 	openEditSelectedComment,
 	openDeleteSelectedComment,
@@ -88,6 +90,7 @@ export const useCommandHandoffs = ({
 	useEffect(() => registerHandoff("openSelectedDiffComment", openSelectedDiffComment), [openSelectedDiffComment])
 	useEffect(() => registerHandoff("toggleDiffCommentRange", toggleDiffCommentRange), [toggleDiffCommentRange])
 	useEffect(() => registerHandoff("openDiffCommentModal", openDiffCommentModal), [openDiffCommentModal])
+	useEffect(() => registerHandoff("openDiffSuggestionModal", openDiffSuggestionModal), [openDiffSuggestionModal])
 	useEffect(() => registerHandoff("openReplyToSelectedComment", openReplyToSelectedComment), [openReplyToSelectedComment])
 	useEffect(() => registerHandoff("openEditSelectedComment", openEditSelectedComment), [openEditSelectedComment])
 	useEffect(() => registerHandoff("openDeleteSelectedComment", openDeleteSelectedComment), [openDeleteSelectedComment])

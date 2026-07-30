@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../../config.js"
-import type { IssueItem } from "../../domain.js"
+import type { CreateIssueInput, EditIssueInput, IssueItem } from "../../domain.js"
 import { itemQueryCacheKeyHasRepository, type ItemListInput } from "../../item.js"
 import { resolveItemLoad, trimItemLoadCache } from "../../item/load.js"
 import { loadItemQueue } from "../../item/queue.js"
@@ -19,6 +19,8 @@ import { filterByScore, issueFilterScore } from "../filter/scoring.js"
 import { initialRetryProgress, RetryProgress } from "../FooterHints.js"
 import { orderIssuesForDisplay } from "../IssueList.js"
 import { selectedIssueIndexAtom } from "../listSelection/atoms.js"
+import type { SurfaceViewConfig } from "../../configStore.js"
+import { applySurfaceView } from "../../settings/viewConfig.js"
 
 // Re-export the view type and helpers for back-compat with existing call sites
 // that import from this module. New code should import directly from
@@ -28,6 +30,7 @@ export { initialIssueView, issueViewMode, issueViewRepository, issueViewToQuery,
 export const activeIssueViewAtom = Atom.make<IssueView>(initialIssueView(detectedRepository)).pipe(Atom.keepAlive)
 export const issueOverridesAtom = Atom.make<Record<string, IssueItem>>({}).pipe(Atom.keepAlive)
 export const issueRetryProgressAtom = Atom.make<RetryProgress>(initialRetryProgress).pipe(Atom.keepAlive)
+export const issueSurfaceViewAtom = Atom.make<SurfaceViewConfig>({}).pipe(Atom.keepAlive)
 
 // In-memory mirror of `queue_snapshots` for issues, keyed by `issueViewCacheKey`.
 // Mirrors `queueLoadCacheAtom` for PRs. Lets us paint the cached list before
@@ -92,11 +95,14 @@ export const allIssuesAtom = Atom.make((get): readonly IssueItem[] => {
 export const issueListAtom = Atom.make((get): readonly IssueItem[] => {
 	const issues = get(allIssuesAtom)
 	const query = get(workspaceSurfaceAtom) === "issues" ? get(effectiveFilterQueryAtom) : ""
-	if (query.length === 0) return issues
-	return orderIssuesForDisplay(
-		filterByScore(issues, query, issueFilterScore, (issue) => issue.updatedAt.getTime()),
-		get(showIssueRepositoryGroupsAtom),
-	)
+	const filtered =
+		query.length === 0
+			? issues
+			: orderIssuesForDisplay(
+					filterByScore(issues, query, issueFilterScore, (issue) => issue.updatedAt.getTime()),
+					get(showIssueRepositoryGroupsAtom),
+				)
+	return applySurfaceView(filtered, get(issueSurfaceViewAtom), "issues")
 })
 
 export const selectedIssueAtom = Atom.make((get): IssueItem | null => {
@@ -145,4 +151,13 @@ export const removeIssueLabelAtom = githubRuntime.fn<{ readonly repository: stri
 
 export const closeIssueAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
 	GitHubService.use((github) => github.closeIssue(input.repository, input.number)),
+)
+
+export const createIssueAtom = githubRuntime.fn<CreateIssueInput>()((input) => GitHubService.use((github) => github.createIssue(input)))
+export const editIssueAtom = githubRuntime.fn<EditIssueInput>()((input) => GitHubService.use((github) => github.editIssue(input)))
+export const reopenIssueAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.reopenIssue(input.repository, input.number)),
+)
+export const deleteIssueAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number }>()((input) =>
+	GitHubService.use((github) => github.deleteIssue(input.repository, input.number)),
 )

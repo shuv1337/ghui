@@ -51,9 +51,15 @@ const selectedDiffCommentAccent = (kind: DiffCommentKind) => selectedDiffComment
 
 const mixDiffLineContentColor = (base: string, accent: string, amount: number) => mixHex(base === "transparent" ? colors.background : base, accent, amount)
 
-const diffCommentLineColor = (anchor: DiffCommentAnchor, kind: "selected" | "range" | "thread"): DiffLineColorConfig => {
+const diffCommentLineColor = (anchor: DiffCommentAnchor, kind: "selected" | "range" | "thread" | "pending"): DiffLineColorConfig => {
 	const original = originalDiffLineColor(anchor)
-	const accent = kind === "thread" ? colors.status.pending : selectedDiffCommentAccent(anchor.kind)
+	const accent = kind === "pending" ? colors.accent : kind === "thread" ? colors.status.pending : selectedDiffCommentAccent(anchor.kind)
+	if (kind === "pending") {
+		return {
+			gutter: mixHex(original.gutter, accent, 0.46),
+			content: mixDiffLineContentColor(original.content, accent, 0.12),
+		}
+	}
 	if (kind === "thread") return { ...original, gutter: mixHex(original.gutter, accent, 0.3) }
 	return {
 		gutter: mixHex(original.gutter, accent, kind === "selected" ? 0.38 : 0.26),
@@ -82,6 +88,7 @@ export interface UseDiffLineColorsInput {
 	readonly selectedDiffCommentAnchor: StackedDiffCommentAnchor | null
 	readonly selectedDiffCommentRangeAnchors: readonly StackedDiffCommentAnchor[]
 	readonly diffCommentThreadAnchors: readonly StackedDiffCommentAnchor[]
+	readonly pendingReviewAnchors: readonly StackedDiffCommentAnchor[]
 	readonly suppressNextDiffCommentScrollRef: MutableRefObject<boolean>
 	readonly ensureDiffLineVisible: (line: number) => void
 }
@@ -108,6 +115,7 @@ export const useDiffLineColors = ({
 	selectedDiffCommentAnchor,
 	selectedDiffCommentRangeAnchors,
 	diffCommentThreadAnchors,
+	pendingReviewAnchors,
 	suppressNextDiffCommentScrollRef,
 	ensureDiffLineVisible,
 }: UseDiffLineColorsInput): UseDiffLineColorsResult => {
@@ -163,6 +171,9 @@ export const useDiffLineColors = ({
 		for (const anchor of diffCommentThreadAnchors) {
 			applyLineColor(anchor, diffCommentLineColor(anchor, "thread"))
 		}
+		for (const anchor of pendingReviewAnchors) {
+			applyLineColor(anchor, diffCommentLineColor(anchor, "pending"), true)
+		}
 		if (selectedDiffCommentRangeAnchors.length > 0) {
 			for (const anchor of selectedDiffCommentRangeAnchors) {
 				applyLineColor(anchor, diffCommentLineColor(anchor, "range"), true)
@@ -208,6 +219,7 @@ export const useDiffLineColors = ({
 		diffLineColorContextKey,
 		effectiveDiffRenderView,
 		diffCommentThreadAnchors,
+		pendingReviewAnchors,
 	])
 
 	const setDiffRenderableRef = (index: number, diff: DiffRenderable | null) => {

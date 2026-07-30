@@ -95,7 +95,7 @@ const buildMainPackage = async () => {
 		repository: rootPackage.repository,
 		bugs: rootPackage.bugs,
 		homepage: rootPackage.homepage,
-		keywords: ["github", "pull-requests", "terminal", "tui"],
+		keywords: ["github", "github-actions", "issues", "notifications", "pull-requests", "terminal", "tui"],
 		bin: { ghui: "bin/ghui.js" },
 		files: ["bin", "README.md", "LICENSE"],
 		optionalDependencies: Object.fromEntries(releaseTargets.map((target) => [binaryPackageName(rootPackage.name, target), rootPackage.version])),

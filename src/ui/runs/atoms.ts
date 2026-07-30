@@ -1,6 +1,12 @@
 import * as Atom from "effect/unstable/reactivity/Atom"
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import { Effect, Stream } from "effect"
+import { CacheService } from "../../services/CacheService.js"
+import { cacheFirstStream } from "../../services/cacheFirst.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
+import type { WorkflowDispatchInput } from "../../domain.js"
+import { selectedRepositoryAtom } from "../../workspace/atoms.js"
 
 // === UI state ===
 
@@ -16,6 +22,12 @@ export const selectedRunIdAtom = Atom.make<number | null>(null)
 // walks the flattened job/step rows inside a run.
 export const runsListSelectionAtom = Atom.make(0)
 export const runDetailSelectionAtom = Atom.make(0)
+export const repositoryRunsSelectionAtom = Atom.make(0)
+export const repositoryRunsFocusedIdAtom = Atom.make<number | null>(null)
+export const repositorySelectedRunIdAtom = Atom.make<number | null>(null)
+export type RepositoryActionsStatusFilter = "all" | "in_progress" | "failure" | "success" | "cancelled"
+export const repositoryActionsStatusFilterAtom = Atom.make<RepositoryActionsStatusFilter>("all")
+export const repositoryActionsWorkflowFilterAtom = Atom.make<string | null>(null)
 
 // === Keying ===
 //
@@ -43,7 +55,84 @@ export const pullRequestRunsFor = Atom.family((key: string) => {
 	return githubRuntime.atom(GitHubService.use((github) => github.listWorkflowRunsForCommit(repository, headSha))).pipe(Atom.setIdleTTL(0))
 })
 
+export const repositoryRunsFor = Atom.family((repository: string) =>
+	githubRuntime
+		.atom(
+			Stream.unwrap(
+				Effect.gen(function* () {
+					const cache = yield* CacheService
+					const github = yield* GitHubService
+					const cached = yield* cache.readActionRuns(repository).pipe(Effect.catch(() => Effect.succeed(null)))
+					const live = Stream.fromEffect(github.listWorkflowRuns(repository).pipe(Effect.tap((data) => cache.writeActionRuns({ repository, data, fetchedAt: new Date() }))))
+					return cacheFirstStream(cached?.data ?? null, live)
+				}),
+			),
+		)
+		.pipe(Atom.setIdleTTL(0)),
+)
+
+export const repositoryWorkflowsFor = Atom.family((repository: string) =>
+	githubRuntime.atom(GitHubService.use((github) => github.listWorkflows(repository))).pipe(Atom.setIdleTTL(0)),
+)
+
+export const selectedRepositoryRunAtom = Atom.make((get) => {
+	const repository = get(selectedRepositoryAtom)
+	if (!repository) return null
+	const result = get(repositoryRunsFor(repository))
+	if (!AsyncResult.isSuccess(result)) return null
+	const selectedRunId = get(repositorySelectedRunIdAtom)
+	const focusedRunId = get(repositoryRunsFocusedIdAtom)
+	const selection = get(repositoryRunsSelectionAtom)
+	return (
+		result.value.find((run) => run.id === selectedRunId) ??
+		result.value.find((run) => run.id === focusedRunId) ??
+		result.value[Math.max(0, Math.min(selection, result.value.length - 1))] ??
+		null
+	)
+})
+
+export const getJobLogAtom = githubRuntime.fn<{ readonly repository: string; readonly jobId: number }>()((input) =>
+	GitHubService.use((github) => github.getJobLog(input.repository, input.jobId)),
+)
+export const retryRunAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number; readonly failedOnly: boolean }>()((input) =>
+	GitHubService.use((github) => github.retryRun(input.repository, input.runId, input.failedOnly)).pipe(
+		Effect.tap(() => CacheService.use((cache) => cache.invalidateActionRuns(input.repository, input.runId))),
+	),
+)
+export const cancelRunAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number }>()((input) =>
+	GitHubService.use((github) => github.cancelRun(input.repository, input.runId)).pipe(
+		Effect.tap(() => CacheService.use((cache) => cache.invalidateActionRuns(input.repository, input.runId))),
+	),
+)
+export const dispatchWorkflowAtom = githubRuntime.fn<WorkflowDispatchInput>()((input) =>
+	GitHubService.use((github) => github.dispatchWorkflow(input)).pipe(Effect.tap(() => CacheService.use((cache) => cache.invalidateActionRuns(input.repository)))),
+)
+export const getWorkflowInputsAtom = githubRuntime.fn<{ readonly repository: string; readonly workflow: string }>()((input) =>
+	GitHubService.use((github) => github.getWorkflowInputs(input.repository, input.workflow)),
+)
+export const listArtifactsAtom = githubRuntime.fn<{ readonly repository: string; readonly runId: number }>()((input) =>
+	GitHubService.use((github) => github.listArtifacts(input.repository, input.runId)),
+)
+export const downloadArtifactAtom = githubRuntime.fn<{
+	readonly repository: string
+	readonly runId: number
+	readonly artifactName: string
+	readonly destination: string
+}>()((input) => GitHubService.use((github) => github.downloadArtifact(input.repository, input.runId, input.artifactName, input.destination)))
+
 export const workflowRunDetailsFor = Atom.family((key: string) => {
 	const { repository, runId } = parseRunDetailKey(key)
-	return githubRuntime.atom(GitHubService.use((github) => github.getWorkflowRunDetails(repository, runId))).pipe(Atom.setIdleTTL(0))
+	return githubRuntime
+		.atom(
+			Stream.unwrap(
+				Effect.gen(function* () {
+					const cache = yield* CacheService
+					const github = yield* GitHubService
+					const cached = yield* cache.readActionRunDetails(repository, runId).pipe(Effect.catch(() => Effect.succeed(null)))
+					const live = Stream.fromEffect(github.getWorkflowRunDetails(repository, runId).pipe(Effect.tap((details) => cache.writeActionRunDetails(repository, details))))
+					return cacheFirstStream(cached, live)
+				}),
+			),
+		)
+		.pipe(Atom.setIdleTTL(0))
 })

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import * as Atom from "effect/unstable/reactivity/Atom"
-import type { DiffCommentSide, PullRequestReviewComment } from "../../domain.js"
+import type { CreatePullRequestCommentInput, DiffCommentSide, PendingReview, PullRequestReviewComment, SubmitPullRequestReviewInput } from "../../domain.js"
 import { loadStoredDiffWhitespaceMode } from "../../themeStore.js"
 import { GitHubService } from "../../services/GitHubService.js"
 import { githubRuntime } from "../../services/runtime.js"
@@ -39,6 +39,8 @@ export const diffCommentRangeStartIndexAtom = Atom.make<number | null>(null)
 export const diffCommentThreadsAtom = Atom.make<Record<string, readonly PullRequestReviewComment[]>>({}).pipe(Atom.keepAlive)
 export const diffCommentsLoadedAtom = Atom.make<Record<string, "loading" | "ready">>({}).pipe(Atom.keepAlive)
 export const pullRequestDiffCacheAtom = Atom.make<Record<string, PullRequestDiffState>>({}).pipe(Atom.keepAlive)
+export const pendingReviewByDiffKeyAtom = Atom.make<Record<string, PendingReview | null>>({}).pipe(Atom.keepAlive)
+export const pendingReviewLoadedAtom = Atom.make<Record<string, "loading" | "ready" | "error">>({}).pipe(Atom.keepAlive)
 
 // Diff and review-comment requests are keyed by PR revision so concurrent
 // HOME prefetches have distinct Effect lifetimes and result channels.
@@ -51,6 +53,24 @@ export const pullRequestReviewCommentsForRevision = Atom.family((revisionKey: st
 	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "review comments")
 	return githubRuntime.atom(GitHubService.use((github) => github.listPullRequestReviewComments(repository, number))).pipe(Atom.setIdleTTL(0))
 })
+
+export const pendingReviewForRevision = Atom.family((revisionKey: string) => {
+	const { repository, number } = parsePullRequestRevisionAtomKey(revisionKey, "pending review")
+	return githubRuntime.atom(GitHubService.use((github) => github.findPendingReview(repository, number))).pipe(Atom.setIdleTTL(0))
+})
+
+export const createPendingReviewAtom = githubRuntime.fn<{ readonly repository: string; readonly number: number; readonly commitId: string }>()((input) =>
+	GitHubService.use((github) => github.createPendingReview(input.repository, input.number, input.commitId)),
+)
+export const addPendingReviewCommentAtom = githubRuntime.fn<{ readonly review: PendingReview; readonly input: CreatePullRequestCommentInput }>()((input) =>
+	GitHubService.use((github) => github.addPendingReviewComment(input.review, input.input)),
+)
+export const submitPendingReviewAtom = githubRuntime.fn<{
+	readonly review: PendingReview
+	readonly event: SubmitPullRequestReviewInput["event"]
+	readonly body: string
+}>()((input) => GitHubService.use((github) => github.submitPendingReview(input.review, input.event, input.body)))
+export const discardPendingReviewAtom = githubRuntime.fn<PendingReview>()((review) => GitHubService.use((github) => github.discardPendingReview(review)))
 
 // === Derived selection atoms ===
 export const selectedDiffKeyAtom = Atom.make((get) => {
@@ -65,6 +85,10 @@ export const selectedDiffStateAtom = Atom.make((get) => {
 })
 
 export const diffReadyAtom = Atom.make((get) => get(selectedDiffStateAtom)?._tag === "Ready")
+export const selectedPendingReviewAtom = Atom.make((get) => {
+	const key = get(selectedDiffKeyAtom)
+	return key ? (get(pendingReviewByDiffKeyAtom)[key] ?? null) : null
+})
 
 // The files we'd actually render once the diff is loaded — empty if the diff
 // isn't Ready, optionally minimized when the user has whitespace-ignore on.

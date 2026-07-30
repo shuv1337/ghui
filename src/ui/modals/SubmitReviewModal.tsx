@@ -11,12 +11,14 @@ export const SubmitReviewModal = ({
 	modalHeight,
 	offsetLeft,
 	offsetTop,
+	pendingReviewCount,
 }: {
 	state: SubmitReviewModalState
 	modalWidth: number
 	modalHeight: number
 	offsetLeft: number
 	offsetTop: number
+	pendingReviewCount: number
 }) => {
 	const { innerWidth, contentWidth } = standardModalDims(modalWidth, modalHeight)
 	const selectedIndex = Math.max(0, Math.min(state.selectedIndex, submitReviewOptions.length - 1))
@@ -35,7 +37,7 @@ export const SubmitReviewModal = ({
 	const cursorLineIndex = cursorLineIndexForLines(lineRanges, cursor)
 	const visibleStart = Math.min(Math.max(0, lineRanges.length - editorHeight), Math.max(0, cursorLineIndex - editorHeight + 1))
 	const visibleLines = lineRanges.slice(visibleStart, visibleStart + editorHeight)
-	const title = "Submit review"
+	const title = pendingReviewCount > 0 ? `Submit review · ${pendingReviewCount} pending` : "Submit review"
 	const editorFocused = state.focus === "body"
 	const renderEditorLine = (line: { readonly text: string; readonly start: number; readonly end: number }, index: number) => {
 		const lineIndex = visibleStart + index

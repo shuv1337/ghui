@@ -87,6 +87,163 @@ export interface PullRequestLabel {
 	readonly color: string | null
 }
 
+export interface RepositoryUser {
+	readonly login: string
+	readonly name: string | null
+}
+
+export interface RepositoryMilestone {
+	readonly number: number
+	readonly title: string
+	readonly state: "open" | "closed"
+	readonly dueOn: Date | null
+}
+
+export interface RepositoryBranch {
+	readonly name: string
+	readonly sha: string
+	readonly protected: boolean
+}
+
+export interface BranchItem extends RepositoryBranch {
+	readonly repository: string
+	readonly isDefault: boolean
+}
+
+export interface CreateBranchInput {
+	readonly repository: string
+	readonly name: string
+	readonly sourceRef: string
+	readonly sourceSha: string
+}
+
+export interface MilestoneItem extends RepositoryMilestone {
+	readonly repository: string
+	readonly description: string
+	readonly openIssues: number
+	readonly closedIssues: number
+	readonly url: string
+}
+
+export interface MilestoneIssue {
+	readonly repository: string
+	readonly number: number
+	readonly title: string
+	readonly state: "open" | "closed"
+	readonly url: string
+}
+
+export interface CreateMilestoneInput {
+	readonly repository: string
+	readonly title: string
+	readonly description: string
+	readonly dueOn: Date | null
+}
+
+export interface EditMilestoneInput extends CreateMilestoneInput {
+	readonly number: number
+	readonly state: "open" | "closed"
+}
+
+export type DeploymentState = "queued" | "in_progress" | "pending" | "success" | "failure" | "error" | "inactive" | "unknown"
+
+export interface DeploymentItem {
+	readonly repository: string
+	readonly id: number
+	readonly environment: string
+	readonly ref: string
+	readonly sha: string
+	readonly task: string
+	readonly state: DeploymentState
+	readonly description: string
+	readonly createdAt: Date
+	readonly updatedAt: Date
+	readonly url: string | null
+}
+
+export interface EnvironmentItem {
+	readonly repository: string
+	readonly id: number
+	readonly name: string
+	readonly url: string
+	readonly protectionRules: number
+	readonly latestDeployment: DeploymentItem | null
+}
+
+export interface RepositoryRunner {
+	readonly repository: string
+	readonly id: number
+	readonly name: string
+	readonly os: string
+	readonly status: "online" | "offline"
+	readonly busy: boolean
+	readonly labels: readonly {
+		readonly name: string
+		readonly type: "read-only" | "custom"
+	}[]
+}
+
+export type NotificationSubjectType = "issue" | "pullRequest" | "release" | "discussion" | "commit" | "repository" | "unknown"
+
+export interface NotificationItem {
+	readonly id: string
+	readonly unread: boolean
+	readonly reason: string
+	readonly subjectType: NotificationSubjectType
+	readonly subject: string
+	readonly repository: string
+	readonly updatedAt: Date
+	readonly lastReadAt: Date | null
+	readonly url: string | null
+}
+
+export interface ItemMetadataChanges {
+	readonly addLabels?: readonly string[]
+	readonly removeLabels?: readonly string[]
+	readonly addAssignees?: readonly string[]
+	readonly removeAssignees?: readonly string[]
+	readonly milestone?: string | null
+}
+
+export interface CreateIssueInput {
+	readonly repository: string
+	readonly title: string
+	readonly body: string
+	readonly labels?: readonly string[]
+	readonly assignees?: readonly string[]
+	readonly milestone?: string | null
+}
+
+export interface EditIssueInput extends ItemMetadataChanges {
+	readonly repository: string
+	readonly number: number
+	readonly title?: string
+	readonly body?: string
+}
+
+export interface CreatePullRequestInput {
+	readonly repository: string
+	readonly title: string
+	readonly body: string
+	readonly base: string
+	readonly head: string
+	readonly draft: boolean
+	readonly labels?: readonly string[]
+	readonly assignees?: readonly string[]
+	readonly reviewers?: readonly string[]
+	readonly milestone?: string | null
+}
+
+export interface EditPullRequestInput extends ItemMetadataChanges {
+	readonly repository: string
+	readonly number: number
+	readonly title?: string
+	readonly body?: string
+	readonly base?: string
+	readonly addReviewers?: readonly string[]
+	readonly removeReviewers?: readonly string[]
+}
+
 export interface CreatePullRequestCommentInput {
 	readonly repository: string
 	readonly number: number
@@ -104,6 +261,14 @@ export interface SubmitPullRequestReviewInput {
 	readonly number: number
 	readonly event: PullRequestReviewEvent
 	readonly body: string
+}
+
+export interface PendingReview {
+	readonly id: string
+	readonly repository: string
+	readonly number: number
+	readonly commitId: string
+	readonly comments: readonly PullRequestReviewComment[]
 }
 
 export interface PullRequestReviewComment {
@@ -212,6 +377,46 @@ export interface WorkflowRunDetails extends WorkflowRun {
 	readonly jobs: readonly RunJob[]
 }
 
+export interface Workflow {
+	readonly id: number
+	readonly name: string
+	readonly state: "active" | "disabled_manually" | "disabled_inactivity" | "disabled_fork"
+	readonly path: string
+}
+
+export type WorkflowInputType = "string" | "boolean" | "choice" | "environment"
+
+export interface WorkflowInput {
+	readonly name: string
+	readonly description: string
+	readonly required: boolean
+	readonly type: WorkflowInputType
+	readonly defaultValue: string | boolean | null
+	readonly options: readonly string[]
+}
+
+export interface WorkflowDispatchInput {
+	readonly repository: string
+	readonly workflow: string
+	readonly ref: string
+	readonly values: Readonly<Record<string, string | boolean>>
+}
+
+export interface ActionArtifact {
+	readonly id: number
+	readonly name: string
+	readonly sizeInBytes: number
+	readonly expired: boolean
+	readonly createdAt: Date
+	readonly expiresAt: Date | null
+}
+
+export interface ActionJobLog {
+	readonly repository: string
+	readonly jobId: number
+	readonly text: string
+}
+
 export interface RepositoryDetails {
 	readonly repository: string
 	readonly description: string | null
@@ -225,6 +430,32 @@ export interface RepositoryDetails {
 	readonly isArchived: boolean
 	readonly isPrivate: boolean
 }
+
+export interface ReleaseItem {
+	readonly repository: string
+	readonly tagName: string
+	readonly name: string
+	readonly body: string
+	readonly isDraft: boolean
+	readonly isPrerelease: boolean
+	readonly author: string | null
+	readonly targetCommitish: string
+	readonly createdAt: Date
+	readonly publishedAt: Date | null
+	readonly url: string
+}
+
+export interface CreateReleaseInput {
+	readonly repository: string
+	readonly tagName: string
+	readonly name: string
+	readonly body: string
+	readonly isDraft: boolean
+	readonly isPrerelease: boolean
+	readonly targetCommitish: string | null
+}
+
+export interface EditReleaseInput extends CreateReleaseInput {}
 
 export type IssueState = "open" | "closed"
 

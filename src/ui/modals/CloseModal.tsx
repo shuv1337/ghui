@@ -21,10 +21,16 @@ export const CloseModal = ({
 	const { contentWidth, bodyHeight } = standardModalDims(modalWidth, modalHeight)
 	const isIssue = state.kind === "issue"
 	const kindLabel = isIssue ? "issue" : "pull request"
-	const title = state.number ? `Close  #${state.number}` : `Close ${kindLabel}`
-	const subtitleText = isIssue ? "This will close the issue without resolving it." : "This will close the pull request without merging it."
-	const confirmLabel = isIssue ? "close issue" : "close"
-	const rightText = state.running ? `${loadingIndicator} closing` : "confirm"
+	const deleting = state.action === "delete"
+	const verb = deleting ? "Delete" : "Close"
+	const title = state.number ? `${verb}  #${state.number}` : `${verb} ${kindLabel}`
+	const subtitleText = deleting
+		? "This permanently deletes the issue. Its comments cannot be recovered."
+		: isIssue
+			? "This will close the issue without resolving it."
+			: "This will close the pull request without merging it."
+	const confirmLabel = deleting ? "delete issue" : isIssue ? "close issue" : "close"
+	const rightText = state.running ? `${loadingIndicator} ${deleting ? "deleting" : "closing"}` : "confirm"
 	const repo = state.repository ? shortRepoName(state.repository) : ""
 	const titleLines = [fitCell(repo, contentWidth), fitCell(state.title, contentWidth)]
 	const topRows = Math.max(0, Math.floor((bodyHeight - titleLines.length - 2) / 2))

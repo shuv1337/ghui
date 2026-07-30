@@ -17,6 +17,7 @@ import {
 	issueLoadMoreSlotAvailableAtom,
 	issueFetchInFlightAtom,
 	issueRetryProgressAtom,
+	issueSurfaceViewAtom,
 	issueOverridesAtom,
 	issueQueueLoadCacheAtom,
 	issuesAtom,
@@ -28,13 +29,14 @@ import {
 	showIssueRepositoryGroupsAtom,
 } from "../../ui/issues/atoms.js"
 import type { RetryProgress } from "../../ui/FooterHints.js"
-import { useMemo } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { issueListRowIndex } from "../../ui/IssueList.js"
 import { selectedIssueIndexAtom } from "../../ui/listSelection/atoms.js"
 import { useClampedIndex } from "../../ui/useClampedIndex.js"
 import { useScrollFollowSelected } from "../../ui/useScrollFollowSelected.js"
 import { useScrollPersistence } from "../../ui/useScrollPersistence.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
+import { useSurfaceView } from "../../settings/useSurfaceView.js"
 
 type SetState<T> = (next: T | ((prev: T) => T)) => void
 
@@ -79,6 +81,8 @@ export interface IssueSurfaceShell {
 	readonly loadMoreIssues: () => boolean
 	readonly isLoadingMoreIssues: boolean
 	readonly resetLoadingMoreIssues: () => void
+	readonly selectIssueByUrl: (url: string) => void
+	readonly selectNewestIssue: () => void
 }
 
 // Issue Surface shell. Owns the issue list derivation (raw → overrides →
@@ -100,6 +104,8 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 	const setIssueQueueLoadCache = useAtomSet(issueQueueLoadCacheAtom)
 	const [selectedIssueIndex, setSelectedIssueIndex] = useAtom(selectedIssueIndexAtom)
 	const setIssueOverrides = useAtomSet(issueOverridesAtom)
+	const setIssueSurfaceView = useAtomSet(issueSurfaceViewAtom)
+	const { view } = useSurfaceView("issues")
 	const allIssues = useAtomValue(allIssuesAtom)
 	const issues = useAtomValue(issueListAtom)
 	const selectedIssue = useAtomValue(selectedIssueAtom)
@@ -108,6 +114,23 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 	const issueFetchInFlight = useAtomValue(issueFetchInFlightAtom)
 	const retryProgress = useAtomValue(issueRetryProgressAtom)
 	const showIssueRepositoryGroups = useAtomValue(showIssueRepositoryGroupsAtom)
+	const selectedIssueUrlRef = useRef<string | null>(null)
+	const previousIssuesRef = useRef(issues)
+
+	useEffect(() => setIssueSurfaceView(view), [setIssueSurfaceView, view])
+
+	useLayoutEffect(() => {
+		if (previousIssuesRef.current !== issues && selectedIssueUrlRef.current) {
+			const preserved = issues.findIndex((issue) => issue.url === selectedIssueUrlRef.current)
+			if (preserved >= 0 && preserved !== selectedIssueIndex) {
+				setSelectedIssueIndex(preserved)
+				previousIssuesRef.current = issues
+				return
+			}
+		}
+		if (selectedIssue) selectedIssueUrlRef.current = selectedIssue.url
+		previousIssuesRef.current = issues
+	}, [issues, selectedIssue, selectedIssueIndex, setSelectedIssueIndex])
 
 	const issueLoad = useMemo(() => resolveIssueLoad(activeIssueView, issueQueueLoadCache, issuesResult), [activeIssueView, issueQueueLoadCache, issuesResult])
 
@@ -168,5 +191,12 @@ export const useIssueSurface = (input: UseIssueSurfaceInput): IssueSurfaceShell 
 		loadMoreIssues,
 		isLoadingMoreIssues,
 		resetLoadingMoreIssues,
+		selectIssueByUrl: (url) => {
+			selectedIssueUrlRef.current = url
+		},
+		selectNewestIssue: () => {
+			selectedIssueUrlRef.current = null
+			setSelectedIssueIndex(0)
+		},
 	}
 }

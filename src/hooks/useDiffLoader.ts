@@ -1,9 +1,16 @@
 import { Effect } from "effect"
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
-import type { PullRequestItem, PullRequestReviewComment } from "../domain.js"
+import type { PendingReview, PullRequestItem, PullRequestReviewComment } from "../domain.js"
 import { errorMessage } from "../errors.js"
 import { capRecord } from "../recordCap.js"
-import { diffCommentsLoadedAtom, pullRequestDiffCacheAtom, pullRequestDiffForRevision, pullRequestReviewCommentsForRevision } from "../ui/diff/atoms.js"
+import {
+	diffCommentsLoadedAtom,
+	pendingReviewForRevision,
+	pendingReviewLoadedAtom,
+	pullRequestDiffCacheAtom,
+	pullRequestDiffForRevision,
+	pullRequestReviewCommentsForRevision,
+} from "../ui/diff/atoms.js"
 import { PullRequestDiffState, pullRequestDiffKey, splitPatchFiles, type PullRequestDiffState as PullRequestDiffStateType } from "../ui/diff.js"
 import { groupDiffCommentThreads, isLocalDiffComment } from "../ui/diff/comments.js"
 import { pullRequestRevisionAtomKey } from "../ui/pullRequests/atoms.js"
@@ -20,10 +27,13 @@ export interface UseDiffLoaderInput {
 	readonly setPullRequestDiffCache: (next: (prev: Record<string, PullRequestDiffStateType>) => Record<string, PullRequestDiffStateType>) => void
 	readonly setDiffCommentsLoaded: (next: (prev: Record<string, LoadStatus>) => Record<string, LoadStatus>) => void
 	readonly setDiffCommentThreads: (next: (prev: Record<string, readonly PullRequestReviewComment[]>) => Record<string, readonly PullRequestReviewComment[]>) => void
+	readonly setPendingReviewByDiffKey: (next: (prev: Record<string, PendingReview | null>) => Record<string, PendingReview | null>) => void
+	readonly setPendingReviewLoaded: (next: (prev: Record<string, "loading" | "ready" | "error">) => Record<string, "loading" | "ready" | "error">) => void
 	readonly flashNotice: (msg: string) => void
 }
 
 export interface DiffLoader {
+	readonly loadPendingReview: (pullRequest: PullRequestItem, force?: boolean) => void
 	readonly loadPullRequestReviewComments: (pullRequest: PullRequestItem, force?: boolean) => void
 	readonly loadPullRequestDiff: (pullRequest: PullRequestItem, options?: { readonly force?: boolean; readonly includeComments?: boolean }) => void
 }
@@ -36,7 +46,33 @@ export interface DiffLoader {
  * the cache state — cached Loading/Ready is reused unless `force` is
  * set.
  */
-export const useDiffLoader = ({ registry, setPullRequestDiffCache, setDiffCommentsLoaded, setDiffCommentThreads, flashNotice }: UseDiffLoaderInput): DiffLoader => {
+export const useDiffLoader = ({
+	registry,
+	setPullRequestDiffCache,
+	setDiffCommentsLoaded,
+	setDiffCommentThreads,
+	setPendingReviewByDiffKey,
+	setPendingReviewLoaded,
+	flashNotice,
+}: UseDiffLoaderInput): DiffLoader => {
+	const loadPendingReview = (pullRequest: PullRequestItem, force = false) => {
+		const key = pullRequestDiffKey(pullRequest)
+		const previous = registry.get(pendingReviewLoadedAtom)[key]
+		if (!force && previous === "ready") return
+		setPendingReviewLoaded((current) => capRecord({ ...current, [key]: "loading" }, DIFF_CACHE_CAP))
+		const pendingAtom = pendingReviewForRevision(pullRequestRevisionAtomKey(pullRequest))
+		if (force) registry.refresh(pendingAtom)
+		void Effect.runPromise(AtomRegistry.getResult(registry, pendingAtom, { suspendOnWaiting: true }))
+			.then((review) => {
+				setPendingReviewByDiffKey((current) => capRecord({ ...current, [key]: review }, DIFF_CACHE_CAP))
+				setPendingReviewLoaded((current) => capRecord({ ...current, [key]: "ready" }, DIFF_CACHE_CAP))
+			})
+			.catch((error) => {
+				setPendingReviewLoaded((current) => capRecord({ ...current, [key]: "error" }, DIFF_CACHE_CAP))
+				flashNotice(errorMessage(error))
+			})
+	}
+
 	const loadPullRequestReviewComments = (pullRequest: PullRequestItem, force = false) => {
 		const key = pullRequestDiffKey(pullRequest)
 		const previousLoadState = registry.get(diffCommentsLoadedAtom)[key]
@@ -83,7 +119,10 @@ export const useDiffLoader = ({ registry, setPullRequestDiffCache, setDiffCommen
 		const includeComments = options.includeComments ?? false
 		const key = pullRequestDiffKey(pullRequest)
 		const existing = registry.get(pullRequestDiffCacheAtom)[key]
-		if (includeComments) loadPullRequestReviewComments(pullRequest, force)
+		if (includeComments) {
+			loadPullRequestReviewComments(pullRequest, force)
+			loadPendingReview(pullRequest, force)
+		}
 		if (!force && existing && (existing._tag === "Ready" || existing._tag === "Loading")) return
 
 		setPullRequestDiffCache((current) => capRecord({ ...current, [key]: PullRequestDiffState.Loading() }, DIFF_CACHE_CAP))
@@ -115,5 +154,5 @@ export const useDiffLoader = ({ registry, setPullRequestDiffCache, setDiffCommen
 			})
 	}
 
-	return { loadPullRequestReviewComments, loadPullRequestDiff }
+	return { loadPendingReview, loadPullRequestReviewComments, loadPullRequestDiff }
 }
