@@ -1,4 +1,5 @@
-import type { IssueItem, PullRequestItem, PullRequestLabel, SubmitPullRequestReviewInput } from "../domain.js"
+import type { IssueItem, PendingReview, PullRequestItem, PullRequestLabel, SubmitPullRequestReviewInput } from "../domain.js"
+import { pullRequestDiffKey } from "../ui/diff.js"
 import { errorMessage } from "../errors.js"
 import { filterLabels } from "../ui/modals/shared.js"
 import type { CloseModalState, LabelModalState, PullRequestStateModalState, SubmitReviewModalState } from "../ui/modals/types.js"
@@ -32,7 +33,11 @@ export interface UseItemModalActionsInput {
 	readonly toggleDraftStatus: (input: { repository: string; number: number; isDraft: boolean }) => Promise<unknown>
 	readonly closePullRequest: (input: { repository: string; number: number }) => Promise<unknown>
 	readonly closeIssue: (input: { repository: string; number: number }) => Promise<unknown>
+	readonly deleteIssue: (input: { repository: string; number: number }) => Promise<unknown>
 	readonly submitPullRequestReview: (input: SubmitPullRequestReviewInput) => Promise<unknown>
+	readonly pendingReview: PendingReview | null
+	readonly submitPendingReview: (input: { readonly review: PendingReview; readonly event: SubmitPullRequestReviewInput["event"]; readonly body: string }) => Promise<unknown>
+	readonly setPendingReviewByDiffKey: (next: (current: Record<string, PendingReview | null>) => Record<string, PendingReview | null>) => void
 	readonly addPullRequestLabel: (input: { repository: string; number: number; label: string }) => Promise<unknown>
 	readonly removePullRequestLabel: (input: { repository: string; number: number; label: string }) => Promise<unknown>
 	readonly addIssueLabel: (input: { repository: string; number: number; label: string }) => Promise<unknown>
@@ -78,7 +83,11 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 		toggleDraftStatus,
 		closePullRequest,
 		closeIssue,
+		deleteIssue,
 		submitPullRequestReview,
+		pendingReview,
+		submitPendingReview,
+		setPendingReviewByDiffKey,
 		addPullRequestLabel,
 		removePullRequestLabel,
 		addIssueLabel,
@@ -116,6 +125,15 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 		flashNotice(`Closed #${number}`)
 
 		if (kind === "issue") {
+			if (closeModal.action === "delete") {
+				void deleteIssue({ repository, number })
+					.then(() => {
+						flashNotice(`Deleted #${number}`)
+						refreshIssues()
+					})
+					.catch((error) => flashNotice(errorMessage(error)))
+				return
+			}
 			const previousIssue = allIssues.find((issue) => issue.url === url)
 			if (previousIssue) setIssueOverrides((current) => ({ ...current, [url]: { ...previousIssue, state: "closed" } }))
 			void closeIssue({ repository, number })
@@ -187,12 +205,20 @@ export const useItemModalActions = (input: UseItemModalActionsInput): ItemModalA
 		const nextReviewStatus = reviewStatusAfterSubmit[option.event]
 
 		setSubmitReviewModal((current) => ({ ...current, running: true, error: null }))
-		void submitPullRequestReview({ repository, number, event: option.event, body })
+		const request =
+			pendingReview && pendingReview.repository === repository && pendingReview.number === number
+				? submitPendingReview({ review: pendingReview, event: option.event, body })
+				: submitPullRequestReview({ repository, number, event: option.event, body })
+		void request
 			.then(() => {
 				if (targetPullRequest && nextReviewStatus) {
 					updatePullRequest(targetPullRequest.url, (pullRequest) => ({ ...pullRequest, reviewStatus: nextReviewStatus }))
 				}
 				closeActiveModal()
+				if (pendingReview) {
+					const key = targetPullRequest ? pullRequestDiffKey(targetPullRequest) : `${repository}#${number}@${pendingReview.commitId}`
+					setPendingReviewByDiffKey((current) => ({ ...current, [key]: null }))
+				}
 				flashNotice(`Submitted ${option.title.toLowerCase()} review for #${number}`)
 			})
 			.catch((error) => {

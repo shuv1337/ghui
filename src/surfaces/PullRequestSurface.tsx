@@ -76,6 +76,7 @@ export interface PullRequestSurfaceProps {
 	readonly selectedDiffCommentAnchor: StackedDiffCommentAnchor | null
 	readonly selectedDiffCommentLabel: string | null
 	readonly selectedDiffCommentThread: readonly PullRequestReviewComment[]
+	readonly pendingReviewCount: number
 	readonly selectDiffCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	readonly setDiffRenderableRef: (index: number, diff: DiffRenderable | null) => void
 	readonly detailFullView: boolean
@@ -142,6 +143,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 		selectedDiffCommentAnchor,
 		selectedDiffCommentLabel,
 		selectedDiffCommentThread,
+		pendingReviewCount,
 		selectDiffCommentLine,
 		setDiffRenderableRef,
 		detailFullView,
@@ -213,6 +215,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				selectedCommentAnchor={selectedDiffCommentAnchor}
 				selectedCommentLabel={selectedDiffCommentLabel}
 				selectedCommentThread={selectedDiffCommentThread}
+				pendingReviewCount={pendingReviewCount}
 				onSelectCommentLine={selectDiffCommentLine}
 				themeId={themeId}
 				themeGeneration={systemThemeGeneration}

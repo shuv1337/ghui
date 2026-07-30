@@ -1,4 +1,4 @@
-import type { IssueItem, PullRequestItem } from "../domain.js"
+import type { IssueItem, PullRequestItem, ReleaseItem } from "../domain.js"
 import type { WorkspaceSurface } from "../workspaceSurfaces.js"
 import type { RepositoryListItem } from "../ui/RepoList.js"
 
@@ -7,6 +7,9 @@ export interface UseListSelectionSteppingInput {
 	readonly visiblePullRequests: readonly PullRequestItem[]
 	readonly issues: readonly IssueItem[]
 	readonly repositoryItems: readonly RepositoryListItem[]
+	readonly releases: readonly ReleaseItem[]
+	readonly resourceItemsLength: number
+	readonly notificationItemsLength: number
 	readonly loadMoreSlotAvailable: boolean
 	readonly issueLoadMoreSlotAvailable: boolean
 	readonly groupStarts: readonly number[]
@@ -14,6 +17,9 @@ export interface UseListSelectionSteppingInput {
 	readonly setSelectedIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedIssueIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedRepositoryIndex: (next: number | ((current: number) => number)) => void
+	readonly setSelectedReleaseIndex: (next: number | ((current: number) => number)) => void
+	readonly setSelectedResourceIndex: (next: number | ((current: number) => number)) => void
+	readonly setSelectedNotificationIndex: (next: number | ((current: number) => number)) => void
 }
 
 export interface ListSelectionStepping {
@@ -44,6 +50,9 @@ export const useListSelectionStepping = ({
 	visiblePullRequests,
 	issues,
 	repositoryItems,
+	releases,
+	resourceItemsLength,
+	notificationItemsLength,
 	loadMoreSlotAvailable,
 	issueLoadMoreSlotAvailable,
 	groupStarts,
@@ -51,6 +60,9 @@ export const useListSelectionStepping = ({
 	setSelectedIndex,
 	setSelectedIssueIndex,
 	setSelectedRepositoryIndex,
+	setSelectedReleaseIndex,
+	setSelectedResourceIndex,
+	setSelectedNotificationIndex,
 }: UseListSelectionSteppingInput): ListSelectionStepping => {
 	const prMaxIndex = () => Math.max(0, visiblePullRequests.length - 1 + (loadMoreSlotAvailable ? 1 : 0))
 	const issueMaxIndex = () => Math.max(0, issues.length - 1 + (issueLoadMoreSlotAvailable ? 1 : 0))
@@ -76,15 +88,30 @@ export const useListSelectionStepping = ({
 					if (repositoryItems.length === 0) return 0
 					return Math.max(0, Math.min(repositoryItems.length - 1, current + delta))
 				})
-			: activeWorkspaceSurface === "issues"
-				? setSelectedIssueIndex((current) => {
-						if (issues.length === 0) return 0
-						return Math.max(0, Math.min(issueMaxIndex(), current + delta))
+			: activeWorkspaceSurface === "notifications"
+				? setSelectedNotificationIndex((current) => {
+						if (notificationItemsLength === 0) return 0
+						return Math.max(0, Math.min(notificationItemsLength - 1, current + delta))
 					})
-				: setSelectedIndex((current) => {
-						if (visiblePullRequests.length === 0) return 0
-						return Math.max(0, Math.min(prMaxIndex(), current + delta))
-					})
+				: activeWorkspaceSurface === "branches" || activeWorkspaceSurface === "milestones" || activeWorkspaceSurface === "environments" || activeWorkspaceSurface === "runners"
+					? setSelectedResourceIndex((current) => {
+							if (resourceItemsLength === 0) return 0
+							return Math.max(0, Math.min(resourceItemsLength - 1, current + delta))
+						})
+					: activeWorkspaceSurface === "issues"
+						? setSelectedIssueIndex((current) => {
+								if (issues.length === 0) return 0
+								return Math.max(0, Math.min(issueMaxIndex(), current + delta))
+							})
+						: activeWorkspaceSurface === "releases"
+							? setSelectedReleaseIndex((current) => {
+									if (releases.length === 0) return 0
+									return Math.max(0, Math.min(releases.length - 1, current + delta))
+								})
+							: setSelectedIndex((current) => {
+									if (visiblePullRequests.length === 0) return 0
+									return Math.max(0, Math.min(prMaxIndex(), current + delta))
+								})
 	const stepSelectedDown = (count = 1) => stepSelected(count)
 	const stepSelectedUp = (count = 1) => stepSelected(-count)
 	const stepSelectedDownWithLoadMore = () => {
@@ -103,6 +130,18 @@ export const useListSelectionStepping = ({
 			})
 			return
 		}
+		if (activeWorkspaceSurface === "notifications") {
+			setSelectedNotificationIndex((current) => (notificationItemsLength === 0 || current >= notificationItemsLength - 1 ? 0 : current + 1))
+			return
+		}
+		if (activeWorkspaceSurface === "branches" || activeWorkspaceSurface === "milestones" || activeWorkspaceSurface === "environments" || activeWorkspaceSurface === "runners") {
+			setSelectedResourceIndex((current) => (resourceItemsLength === 0 || current >= resourceItemsLength - 1 ? 0 : current + 1))
+			return
+		}
+		if (activeWorkspaceSurface === "releases") {
+			setSelectedReleaseIndex((current) => (releases.length === 0 || current >= releases.length - 1 ? 0 : current + 1))
+			return
+		}
 		setSelectedIndex((current) => {
 			if (visiblePullRequests.length === 0) return 0
 			const max = prMaxIndex()
@@ -112,9 +151,15 @@ export const useListSelectionStepping = ({
 	const stepSelectedUpWrap = () =>
 		activeWorkspaceSurface === "repos"
 			? setSelectedRepositoryIndex((current) => Math.max(0, current - 1))
-			: activeWorkspaceSurface === "issues"
-				? setSelectedIssueIndex((current) => Math.max(0, current - 1))
-				: setSelectedIndex((current) => Math.max(0, current - 1))
+			: activeWorkspaceSurface === "notifications"
+				? setSelectedNotificationIndex((current) => Math.max(0, current - 1))
+				: activeWorkspaceSurface === "branches" || activeWorkspaceSurface === "milestones" || activeWorkspaceSurface === "environments" || activeWorkspaceSurface === "runners"
+					? setSelectedResourceIndex((current) => Math.max(0, current - 1))
+					: activeWorkspaceSurface === "issues"
+						? setSelectedIssueIndex((current) => Math.max(0, current - 1))
+						: activeWorkspaceSurface === "releases"
+							? setSelectedReleaseIndex((current) => Math.max(0, current - 1))
+							: setSelectedIndex((current) => Math.max(0, current - 1))
 
 	return { stepSelected, stepSelectedDown, stepSelectedUp, stepSelectedDownWithLoadMore, stepSelectedUpWrap, moveSelectedToPreviousGroup, moveSelectedToNextGroup }
 }

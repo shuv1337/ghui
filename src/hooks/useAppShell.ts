@@ -4,6 +4,7 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 import { useContext, useEffect, useRef, useState } from "react"
 import type { AppCommand } from "../commands.js"
 import { parseRepositoryInput } from "../pullRequestViews.js"
+import { errorMessage } from "../errors.js"
 
 import { colors } from "../ui/colors.js"
 import { workspaceSurfaceAtom } from "../workspace/atoms.js"
@@ -32,6 +33,8 @@ import { useCommentsLoader } from "./useCommentsLoader.js"
 import { useCommentsViewActions } from "./useCommentsViewActions.js"
 import { useDiffLoader } from "./useDiffLoader.js"
 import { useRunsView } from "./useRunsView.js"
+import { useParitySurfaces } from "./useParitySurfaces.js"
+import { useActionsSurfaceShell } from "./useActionsSurfaceShell.js"
 import { useLinkNavigation } from "./useLinkNavigation.js"
 import { useLoadingStatus } from "./useLoadingStatus.js"
 import { useCommandRegistry } from "./useCommandRegistry.js"
@@ -40,6 +43,9 @@ import { useModalSelectionMovers } from "./useModalSelectionMovers.js"
 import { useAppKeymap } from "./useAppKeymap.js"
 import { useModalStack } from "./useModalStack.js"
 import { useItemMutations } from "../item/useItemMutations.js"
+import { BulkSkipError, runBulkItems } from "../item/bulk.js"
+import { lastBulkRetrySpecAtom, lastBulkRetryUrlsAtom, selectedItemUrlsAtom } from "../item/selection.js"
+import { bulkItemActions } from "../ui/modals/types.js"
 import { useSelectionDerivations } from "./useSelectionDerivations.js"
 import { useStartupTasks } from "./useStartupTasks.js"
 import { usePasteRouter } from "./usePasteRouter.js"
@@ -48,22 +54,31 @@ import { useDiffSelectionSync } from "./useDiffSelectionSync.js"
 import { useDiffViewState } from "./useDiffViewState.js"
 import { useViewModeState } from "./useViewModeState.js"
 import { useFilterModal } from "../ui/filter/useFilterModal.js"
-import { DIFF_FILE_PANEL_AUTO_THRESHOLD, diffFilePanelOverrideAtom, selectedDiffKeyAtom, selectedDiffStateAtom } from "../ui/diff/atoms.js"
+import {
+	DIFF_FILE_PANEL_AUTO_THRESHOLD,
+	diffFilePanelOverrideAtom,
+	selectedDiffKeyAtom,
+	selectedDiffStateAtom,
+	selectedPendingReviewAtom,
+	submitPendingReviewAtom,
+	discardPendingReviewAtom,
+} from "../ui/diff/atoms.js"
 import { runsFullViewAtom } from "../ui/runs/atoms.js"
 import { diffCommentThreadMapKey } from "../ui/diff/comments.js"
+import { diffCommentLocationKey } from "../ui/diff.js"
 import { useDiffLineColors } from "../ui/diff/useDiffLineColors.js"
 import { useDiffLocationPreservation } from "../ui/diff/useDiffLocationPreservation.js"
 import { useDiffPrefetch } from "../ui/diff/useDiffPrefetch.js"
 import { showScrollbarsAtom, themeIdAtom } from "../ui/theme/atoms.js"
 import { useThemeModal } from "../ui/theme/useThemeModal.js"
 import { useMergeFlow } from "../ui/merge/useMergeFlow.js"
-import { initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
+import { filteredMetadataOptions, initialCommentModalState, submitReviewOptions } from "../ui/modals.js"
 import { useClampedIndex } from "../ui/useClampedIndex.js"
 import { useCommandHandoffs } from "./useCommandHandoffs.js"
 import { useDiffCommentDerivations } from "./useDiffCommentDerivations.js"
 import { useDiffCommentNavigator } from "./useDiffCommentNavigator.js"
 import { useItemModalActions } from "../item/useItemModalActions.js"
-import { repositoryWorkspaceSurfaces, userWorkspaceSurfaces, type WorkspaceSurface } from "../workspaceSurfaces.js"
+import { workspaceSurfacesForScope, type WorkspaceSurface } from "../workspaceSurfaces.js"
 import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath } from "../services/runtime.js"
 
 export interface UseAppShellInput {
@@ -89,6 +104,10 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const [filterQuery, setFilterQuery] = useAtom(filterQueryAtom)
 	const [filterDraft, setFilterDraft] = useAtom(filterDraftAtom)
 	const [filterMode, setFilterMode] = useAtom(filterModeAtom)
+	const [selectedItemUrls, setSelectedItemUrls] = useAtom(selectedItemUrlsAtom)
+	const setLastBulkRetryUrls = useAtomSet(lastBulkRetryUrlsAtom)
+	const setLastBulkRetrySpec = useAtomSet(lastBulkRetrySpecAtom)
+	const bulkAbortRef = useRef<AbortController | null>(null)
 	const {
 		detailFullView,
 		setDetailFullView,
@@ -119,6 +138,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setDiffCommentThreads,
 		setDiffCommentsLoaded,
 		setPullRequestDiffCache,
+		setPendingReviewByDiffKey,
+		setPendingReviewLoaded,
 	} = useDiffViewState()
 	const setPullRequestComments = useAtomSet(pullRequestCommentsAtom)
 	const setPullRequestCommentsLoaded = useAtomSet(pullRequestCommentsLoadedAtom)
@@ -129,19 +150,31 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		closeActiveModal,
 		labelModalActive,
 		closeModalActive,
+		itemEditorModalActive,
+		metadataSelectorModalActive,
 		pullRequestStateModalActive,
 		mergeModalActive,
 		commentModalActive,
 		deleteCommentModalActive,
 		commentThreadModalActive,
 		changedFilesModalActive,
+		bulkEditorModalActive,
 		filterModalActive,
 		submitReviewModalActive,
+		pendingReviewModalActive,
+		runActionModalActive,
+		workflowDispatchModalActive,
+		artifactDownloadModalActive,
 		themeModalActive,
 		commandPaletteActive,
+		releaseEditorModalActive,
+		deleteReleaseModalActive,
 		openRepositoryModalActive,
 		labelModal,
 		closeModal,
+		itemEditorModal,
+		metadataSelectorModal,
+		bulkEditorModal,
 		pullRequestStateModal,
 		mergeModal,
 		commentModal,
@@ -149,21 +182,40 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		changedFilesModal,
 		filterModal,
 		submitReviewModal,
+		pendingReviewModal,
+		runActionModal,
+		workflowDispatchModal,
+		artifactDownloadModal,
 		themeModal,
 		commandPalette,
 		openRepositoryModal,
+		releaseEditorModal,
+		deleteReleaseModal,
+		resourceEditorModal,
+		deleteResourceModal,
 		setLabelModal,
+		setItemEditorModal,
+		setMetadataSelectorModal,
 		setPullRequestStateModal,
 		setMergeModal,
 		setCommentModal,
 		setDeleteCommentModal,
 		setCommentThreadModal,
 		setChangedFilesModal,
+		setBulkEditorModal,
 		setFilterModal,
 		setSubmitReviewModal,
+		setPendingReviewModal,
+		setRunActionModal,
+		setWorkflowDispatchModal,
+		setArtifactDownloadModal,
 		setThemeModal,
 		setCommandPalette,
 		setOpenRepositoryModal,
+		setReleaseEditorModal,
+		setDeleteReleaseModal,
+		setResourceEditorModal,
+		setDeleteResourceModal,
 	} = useModalStack()
 	const [startupLoadComplete, setStartupLoadComplete] = useState(false)
 	const [homeCrumbHovered, setHomeCrumbHovered] = useState(false)
@@ -182,6 +234,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		prewarmRepositoryDetails,
 		closePullRequest,
 		closeIssue,
+		createIssue,
+		editIssue,
+		reopenIssue,
+		deleteIssue,
+		createPullRequest,
+		editPullRequest,
+		reopenPullRequest,
 		refreshIssues,
 		submitPullRequestReview,
 		openUrl,
@@ -299,6 +358,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		detailHydrationState,
 		resetHydration,
 		selectPullRequestByUrl,
+		selectNewestPullRequest,
 	} = prSurface
 	const isInitialLoading = !startupLoadComplete && pullRequestStatus === "loading" && pullRequests.length === 0
 
@@ -336,13 +396,314 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		loadMoreIssues,
 		isLoadingMoreIssues,
 		resetLoadingMoreIssues,
+		selectNewestIssue,
 	} = issueSurface
 	const retryProgress = activeWorkspaceSurface === "issues" ? issueRetryProgress : pullRequestRetryProgress
 	const refreshIssuesIfIdle = () => {
 		if (!issueFetchInFlight && !isLoadingMoreIssues) refreshIssues()
 	}
+	const { releaseSurface, releaseActions, resourcesView, resourceActions, notificationsView } = useParitySurfaces({
+		repository: selectedRepository,
+		activeSurface: activeWorkspaceSurface,
+		filterText: visibleFilterText,
+		releaseEditor: releaseEditorModal,
+		deleteRelease: deleteReleaseModal,
+		resourceEditor: resourceEditorModal,
+		deleteResource: deleteResourceModal,
+		setReleaseEditor: setReleaseEditorModal,
+		setDeleteRelease: setDeleteReleaseModal,
+		setResourceEditor: setResourceEditorModal,
+		setDeleteResource: setDeleteResourceModal,
+		closeModal: closeActiveModal,
+		notify: flashNotice,
+		openUrl,
+	})
+	const { releases, selectedRelease, selectedReleaseIndex, setSelectedReleaseIndex, status: releaseStatus, error: releaseError, view: releaseView } = releaseSurface
+	const splitMetadata = (value: string): readonly string[] => [
+		...new Set(
+			value
+				.split(",")
+				.map((entry) => entry.trim())
+				.filter(Boolean),
+		),
+	]
+	const moveItemEditorFocus = (delta: -1 | 1) => {
+		setItemEditorModal((current) => {
+			const fields: readonly (typeof current.focus)[] =
+				current.kind === "issue"
+					? (["title", "body", "labels", "assignees", "milestone"] as const)
+					: current.mode === "create"
+						? (["title", "body", "base", "head", "draft", "labels", "assignees", "reviewers", "milestone"] as const)
+						: (["title", "body", "base", "labels", "assignees", "reviewers", "milestone"] as const)
+			const index = Math.max(0, fields.indexOf(current.focus as (typeof fields)[number]))
+			return { ...current, focus: fields[(index + delta + fields.length) % fields.length]! }
+		})
+	}
+	const toggleItemEditorDraft = () => {
+		setItemEditorModal((current) => (current.kind === "pullRequest" && current.mode === "create" && current.focus === "draft" ? { ...current, draft: !current.draft } : current))
+	}
+	const submitItemEditor = () => {
+		const state = itemEditorModal
+		const title = state.title.trim()
+		if (!title) {
+			setItemEditorModal((current) => ({ ...current, error: "Title is required.", focus: "title" }))
+			return
+		}
+		if (state.kind === "pullRequest" && (!state.base.trim() || (state.mode === "create" && !state.head.trim()))) {
+			setItemEditorModal((current) => ({ ...current, error: "Base and head branches are required.", focus: !current.base.trim() ? "base" : "head" }))
+			return
+		}
+		const labels = splitMetadata(state.labels)
+		const assignees = splitMetadata(state.assignees)
+		const reviewers = splitMetadata(state.reviewers)
+		const milestone = state.milestone.trim() || null
+		setItemEditorModal((current) => ({ ...current, running: true, error: null }))
 
-	const workspaceTabSurfaces: readonly WorkspaceSurface[] = selectedRepository ? repositoryWorkspaceSurfaces : userWorkspaceSurfaces
+		const previousIssue = state.url ? (allIssues.find((issue) => issue.url === state.url) ?? null) : null
+		const previousPullRequest = state.url ? (pullRequests.find((pullRequest) => pullRequest.url === state.url) ?? null) : null
+		const previousLabels = (previousIssue ?? previousPullRequest)?.labels.map((label) => label.name) ?? []
+		const addLabels = labels.filter((label) => !previousLabels.includes(label))
+		const removeLabels = previousLabels.filter((label) => !labels.includes(label))
+		if (previousIssue) updateIssue(previousIssue.url, (issue) => ({ ...issue, title, body: state.body, labels: labels.map((name) => ({ name, color: null })) }))
+		if (previousPullRequest) {
+			updatePullRequest(previousPullRequest.url, (pullRequest) => ({
+				...pullRequest,
+				title,
+				body: state.body,
+				baseRefName: state.base.trim(),
+				labels: labels.map((name) => ({ name, color: null })),
+			}))
+		}
+
+		const request =
+			state.kind === "issue"
+				? state.mode === "create"
+					? createIssue({ repository: state.repository, title, body: state.body, labels, assignees, milestone })
+					: editIssue({
+							repository: state.repository,
+							number: state.number!,
+							title,
+							body: state.body,
+							addLabels,
+							removeLabels,
+							addAssignees: assignees,
+							milestone,
+						})
+				: state.mode === "create"
+					? createPullRequest({
+							repository: state.repository,
+							title,
+							body: state.body,
+							base: state.base.trim(),
+							head: state.head.trim(),
+							draft: state.draft,
+							labels,
+							assignees,
+							reviewers,
+							milestone,
+						})
+					: editPullRequest({
+							repository: state.repository,
+							number: state.number!,
+							title,
+							body: state.body,
+							base: state.base.trim(),
+							addLabels,
+							removeLabels,
+							addAssignees: assignees,
+							addReviewers: reviewers,
+							milestone,
+						})
+
+		void request
+			.then(() => {
+				closeActiveModal()
+				if (state.mode === "create") {
+					if (state.kind === "issue") selectNewestIssue()
+					else selectNewestPullRequest()
+				}
+				if (state.kind === "issue") refreshIssuesIfIdle()
+				else refreshPullRequests()
+				flashNotice(`${state.mode === "create" ? "Created" : "Updated"} ${state.kind === "issue" ? "issue" : "pull request"}`)
+			})
+			.catch((error) => {
+				if (previousIssue) updateIssue(previousIssue.url, () => previousIssue)
+				if (previousPullRequest) updatePullRequest(previousPullRequest.url, () => previousPullRequest)
+				setItemEditorModal((current) => ({ ...current, running: false, error: errorMessage(error) }))
+			})
+	}
+	const moveMetadataSelector = (delta: -1 | 1) => {
+		setMetadataSelectorModal((current) => {
+			const length = filteredMetadataOptions(current).length
+			return length === 0 ? current : { ...current, selectedIndex: (current.selectedIndex + delta + length) % length }
+		})
+	}
+	const toggleMetadataSelector = (forcedIndex?: number) => {
+		const state = metadataSelectorModal
+		if (state.loading || state.running) return
+		const index = forcedIndex ?? state.selectedIndex
+		const option = filteredMetadataOptions(state)[index]
+		if (!option) return
+		if (forcedIndex !== undefined && forcedIndex !== state.selectedIndex) setMetadataSelectorModal((current) => ({ ...current, selectedIndex: forcedIndex }))
+		const selected = state.selectedIds.includes(option.id)
+		setMetadataSelectorModal((current) => ({ ...current, running: true, error: null }))
+		const target = state.target
+		const request =
+			state.kind === "assignees"
+				? target.kind === "issue"
+					? editIssue({
+							repository: target.repository,
+							number: target.number,
+							...(selected ? { removeAssignees: [option.id] } : { addAssignees: [option.id] }),
+						})
+					: editPullRequest({
+							repository: target.repository,
+							number: target.number,
+							...(selected ? { removeAssignees: [option.id] } : { addAssignees: [option.id] }),
+						})
+				: state.kind === "reviewers"
+					? editPullRequest({
+							repository: target.repository,
+							number: target.number,
+							...(selected ? { removeReviewers: [option.id] } : { addReviewers: [option.id] }),
+						})
+					: state.kind === "milestone"
+						? target.kind === "issue"
+							? editIssue({ repository: target.repository, number: target.number, milestone: option.id })
+							: editPullRequest({ repository: target.repository, number: target.number, milestone: option.id })
+						: editPullRequest({ repository: target.repository, number: target.number, base: option.id })
+		void request
+			.then(() => {
+				if (state.kind === "assignees" || state.kind === "reviewers") {
+					setMetadataSelectorModal((current) => ({
+						...current,
+						running: false,
+						selectedIds: selected ? current.selectedIds.filter((id) => id !== option.id) : [...current.selectedIds, option.id],
+					}))
+				} else {
+					if (state.kind === "base") {
+						updatePullRequest(target.url, (pullRequest) => ({ ...pullRequest, baseRefName: option.id }))
+						refreshPullRequests()
+					} else if (target.kind === "issue") refreshIssuesIfIdle()
+					else refreshPullRequests()
+					closeActiveModal()
+				}
+				flashNotice(`${selected ? "Removed" : "Applied"} ${option.label}`)
+			})
+			.catch((error) => setMetadataSelectorModal((current) => ({ ...current, running: false, error: errorMessage(error) })))
+	}
+	const moveBulkAction = (delta: -1 | 1) => {
+		setBulkEditorModal((current) => {
+			const index = bulkItemActions.indexOf(current.action)
+			const action = bulkItemActions[(index + delta + bulkItemActions.length) % bulkItemActions.length]!
+			return { ...current, action, focus: action === "close" || action === "reopen" ? "action" : current.focus, confirming: false, summary: null, resultLines: [] }
+		})
+	}
+	const toggleBulkEditorFocus = () => {
+		setBulkEditorModal((current) => (current.action === "close" || current.action === "reopen" ? current : { ...current, focus: current.focus === "action" ? "value" : "action" }))
+	}
+	const toggleItemSelection = (url: string) => {
+		const next = selectedItemUrls.includes(url) ? selectedItemUrls.filter((selectedUrl) => selectedUrl !== url) : [...selectedItemUrls, url]
+		setSelectedItemUrls(next)
+		setNotice(`${next.length} item${next.length === 1 ? "" : "s"} selected`)
+	}
+	const closeOrCancelBulkEditor = () => {
+		if (bulkEditorModal.running) {
+			bulkAbortRef.current?.abort()
+			setBulkEditorModal((current) => ({ ...current, cancelRequested: true, summary: "Cancellation requested; finishing in-flight items." }))
+			return
+		}
+		closeActiveModal()
+	}
+	const submitBulkEditor = () => {
+		const state = bulkEditorModal
+		if (state.running || state.targets.length === 0) return
+		const needsValue = state.action !== "close" && state.action !== "reopen"
+		const value = state.value.trim()
+		if (needsValue && !value) {
+			setBulkEditorModal((current) => ({ ...current, focus: "value", error: "Enter a metadata value." }))
+			return
+		}
+		if (state.action === "close" && !state.confirming) {
+			setBulkEditorModal((current) => ({ ...current, confirming: true, error: null, summary: "Press Enter again to close all eligible selected items." }))
+			return
+		}
+		const controller = new AbortController()
+		bulkAbortRef.current = controller
+		setBulkEditorModal((current) => ({ ...current, running: true, confirming: false, cancelRequested: false, error: null, summary: null, resultLines: [] }))
+		void runBulkItems(
+			state.targets,
+			async (target) => {
+				if (state.action === "close") {
+					if (target.state !== "open") throw new BulkSkipError("Already closed or merged.")
+					await (target.kind === "issue"
+						? closeIssue({ repository: target.repository, number: target.number })
+						: closePullRequest({ repository: target.repository, number: target.number }))
+					return
+				}
+				if (state.action === "reopen") {
+					if (target.state !== "closed") throw new BulkSkipError("Item is not closed.")
+					await (target.kind === "issue"
+						? reopenIssue({ repository: target.repository, number: target.number })
+						: reopenPullRequest({ repository: target.repository, number: target.number }))
+					return
+				}
+				if (target.kind === "issue") {
+					await editIssue({
+						repository: target.repository,
+						number: target.number,
+						...(state.action === "addLabel"
+							? { addLabels: [value] }
+							: state.action === "removeLabel"
+								? { removeLabels: [value] }
+								: state.action === "addAssignee"
+									? { addAssignees: [value] }
+									: state.action === "removeAssignee"
+										? { removeAssignees: [value] }
+										: { milestone: value }),
+					})
+					return
+				}
+				await editPullRequest({
+					repository: target.repository,
+					number: target.number,
+					...(state.action === "addLabel"
+						? { addLabels: [value] }
+						: state.action === "removeLabel"
+							? { removeLabels: [value] }
+							: state.action === "addAssignee"
+								? { addAssignees: [value] }
+								: state.action === "removeAssignee"
+									? { removeAssignees: [value] }
+									: { milestone: value }),
+				})
+			},
+			{ concurrency: 3, signal: controller.signal },
+		)
+			.then((result) => {
+				const retryUrls = result.results.filter((entry) => entry.status === "failed" && entry.retryable).map((entry) => entry.item.url)
+				setLastBulkRetryUrls(retryUrls)
+				setLastBulkRetrySpec(retryUrls.length > 0 ? { urls: retryUrls, action: state.action, value } : null)
+				setSelectedItemUrls(result.results.filter((entry) => entry.status !== "succeeded").map((entry) => entry.item.url))
+				setBulkEditorModal((current) => ({
+					...current,
+					running: false,
+					summary: `${result.succeeded} succeeded · ${result.failed} failed · ${result.skipped} skipped · ${result.retryable} retryable`,
+					resultLines: result.results.map(
+						(entry) =>
+							`${entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "!" : "–"} #${entry.item.number} ${entry.status}${entry.error ? ` · ${entry.error}` : ""}`,
+					),
+				}))
+				refreshIssuesIfIdle()
+				refreshPullRequests()
+			})
+			.catch((error) => setBulkEditorModal((current) => ({ ...current, running: false, error: errorMessage(error) })))
+			.finally(() => {
+				if (bulkAbortRef.current === controller) bulkAbortRef.current = null
+			})
+	}
+
+	const workspaceTabSurfaces: readonly WorkspaceSurface[] = workspaceSurfacesForScope(selectedRepository ? "repository" : "user")
 	const repo = useRepoSurface({
 		pullRequests,
 		allIssues,
@@ -368,6 +729,9 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const pullRequestComments = useAtomValue(pullRequestCommentsAtom)
 	const selectedDiffKey = useAtomValue(selectedDiffKeyAtom)
 	const selectedDiffState = useAtomValue(selectedDiffStateAtom)
+	const selectedPendingReview = useAtomValue(selectedPendingReviewAtom)
+	const submitPendingReview = useAtomSet(submitPendingReviewAtom, { mode: "promise" })
+	const discardPendingReview = useAtomSet(discardPendingReviewAtom, { mode: "promise" })
 	const {
 		selectedCommentSubject,
 		selectedCommentKey,
@@ -397,6 +761,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedDiffCommentThread,
 		diffLineColorContextKey,
 		diffCommentThreadAnchors,
+		pendingReviewAnchors,
 	} = useDiffCommentDerivations({
 		selectedDiffState,
 		readyDiffFiles,
@@ -412,6 +777,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		diffCommentRangeStartIndex,
 		selectedDiffKey,
 		diffCommentThreads,
+		pendingReviewComments: selectedPendingReview?.comments ?? [],
 	})
 	const getCurrentGroupIndex = (current: number) => groupIndexAt(groupStarts, current)
 	const { headerRight, headerLeftWidth, footerNotice, homeCrumb, breadcrumbSeparatorText, headerRepoWidth } = computeHeaderDerivations({
@@ -564,6 +930,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedDiffCommentAnchor,
 		selectedDiffCommentRangeAnchors,
 		diffCommentThreadAnchors,
+		pendingReviewAnchors,
 		suppressNextDiffCommentScrollRef,
 		ensureDiffLineVisible: (line) => ensureDiffLineVisible(line),
 	})
@@ -585,6 +952,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pullRequestLoad,
 		pullRequestStatus,
 		issuesStatus,
+		releaseStatus,
+		notificationStatus: notificationsView.status,
 		isLoadingMorePullRequests,
 		issueFetchInFlight,
 		isLoadingMoreIssues,
@@ -615,12 +984,29 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
 
 	const runsView = useRunsView(selectedPullRequest, halfPage)
+	const { view: actionsView, modalActions: actionsModalActions } = useActionsSurfaceShell({
+		renderer,
+		repository: selectedRepository,
+		active: activeWorkspaceSurface === "actions",
+		halfPage,
+		filterText: visibleFilterText,
+		runActionModal,
+		workflowDispatchModal,
+		artifactDownloadModal,
+		setRunActionModal,
+		setWorkflowDispatchModal,
+		setArtifactDownloadModal,
+		closeModal: closeActiveModal,
+		notify: flashNotice,
+	})
 
 	const { loadPullRequestDiff } = useDiffLoader({
 		registry,
 		setPullRequestDiffCache,
 		setDiffCommentsLoaded,
 		setDiffCommentThreads,
+		setPendingReviewByDiffKey,
+		setPendingReviewLoaded,
 		flashNotice,
 	})
 
@@ -705,6 +1091,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectDiffCommentSide,
 		selectDiffCommentLine,
 		openDiffCommentModal,
+		openDiffSuggestionModal,
 		openSelectedDiffComment,
 		toggleDiffCommentRange,
 		moveDiffCommentThread,
@@ -780,12 +1167,108 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		toggleDraftStatus,
 		closePullRequest,
 		closeIssue,
+		deleteIssue,
 		submitPullRequestReview,
+		pendingReview: selectedPendingReview,
+		submitPendingReview,
+		setPendingReviewByDiffKey,
 		addPullRequestLabel,
 		removePullRequestLabel,
 		addIssueLabel,
 		removeIssueLabel,
 	})
+
+	const selectedQueuedComment = selectedPendingReview?.comments[Math.max(0, Math.min(pendingReviewModal.selectedIndex, selectedPendingReview.comments.length - 1))] ?? null
+	const movePendingReviewSelection = (delta: -1 | 1) => {
+		const count = selectedPendingReview?.comments.length ?? 0
+		setPendingReviewModal((current) => ({
+			...current,
+			confirmingDiscard: false,
+			selectedIndex: count > 0 ? (current.selectedIndex + delta + count) % count : 0,
+		}))
+	}
+	const jumpPendingReviewComment = () => {
+		if (!selectedQueuedComment) return
+		const index = diffCommentAnchors.findIndex((anchor) => diffCommentLocationKey(anchor) === diffCommentLocationKey(selectedQueuedComment))
+		if (index < 0) {
+			setPendingReviewModal((current) => ({ ...current, error: "Queued line is not present in this diff revision." }))
+			return
+		}
+		setDiffCommentAnchorIndex(index)
+		setDiffFileIndex(diffCommentAnchors[index]!.fileIndex)
+		closeActiveModal()
+	}
+	const pendingCommentSubject = () =>
+		selectedPullRequest && selectedDiffKey
+			? {
+					key: selectedDiffKey,
+					repository: selectedPullRequest.repository,
+					number: selectedPullRequest.number,
+					issueUrl: null,
+				}
+			: null
+	const editPendingReviewComment = () => {
+		const subject = pendingCommentSubject()
+		if (!subject || !selectedQueuedComment) return
+		setCommentModal({
+			...initialCommentModalState,
+			body: selectedQueuedComment.body,
+			cursor: selectedQueuedComment.body.length,
+			target: {
+				kind: "edit",
+				subject,
+				commentId: selectedQueuedComment.id,
+				commentTag: "review-comment",
+				anchorLabel: `Editing queued ${selectedQueuedComment.path}:${selectedQueuedComment.line}`,
+			},
+		})
+	}
+	const deletePendingReviewComment = () => {
+		const subject = pendingCommentSubject()
+		if (!subject || !selectedQueuedComment) return
+		const firstLine = selectedQueuedComment.body.split("\n").find((line) => line.trim().length > 0) ?? ""
+		setDeleteCommentModal({
+			subject,
+			commentId: selectedQueuedComment.id,
+			commentTag: "review-comment",
+			author: selectedQueuedComment.author,
+			preview: firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine,
+			running: false,
+			error: null,
+		})
+	}
+	const submitPendingReviewFromPane = () => {
+		if (!selectedPendingReview) return
+		const selectedIndex = Math.max(
+			0,
+			submitReviewOptions.findIndex((option) => option.event === "APPROVE"),
+		)
+		setSubmitReviewModal({
+			repository: selectedPendingReview.repository,
+			number: selectedPendingReview.number,
+			focus: "action",
+			selectedIndex,
+			body: "",
+			cursor: 0,
+			running: false,
+			error: null,
+		})
+	}
+	const discardPendingReviewFromPane = () => {
+		if (!selectedPendingReview || pendingReviewModal.running) return
+		if (!pendingReviewModal.confirmingDiscard) {
+			setPendingReviewModal((current) => ({ ...current, confirmingDiscard: true, error: null }))
+			return
+		}
+		setPendingReviewModal((current) => ({ ...current, running: true, error: null }))
+		void discardPendingReview(selectedPendingReview)
+			.then(() => {
+				if (selectedDiffKey) setPendingReviewByDiffKey((current) => ({ ...current, [selectedDiffKey]: null }))
+				closeActiveModal()
+				flashNotice("Pending review discarded")
+			})
+			.catch((error) => setPendingReviewModal((current) => ({ ...current, running: false, error: errorMessage(error) })))
+	}
 
 	const { openInlineLink } = useLinkNavigation({
 		issues,
@@ -843,6 +1326,18 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		labelModalActive,
 		changedFilesModalActive,
 		filterMode,
+		itemEditorModalActive,
+		itemEditorModal,
+		metadataSelectorModalActive,
+		metadataSelectorModal,
+		bulkEditorModalActive,
+		bulkEditorModal,
+		workflowDispatchModalActive,
+		artifactDownloadModalActive,
+		workflowDispatchModal,
+		artifactDownloadModal,
+		releaseEditorModalActive,
+		releaseEditorModal,
 		setCommandPalette,
 		setOpenRepositoryModal,
 		editThemeQuery,
@@ -850,6 +1345,12 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setLabelModal,
 		setChangedFilesModal,
 		setFilterDraft,
+		setItemEditorModal,
+		setMetadataSelectorModal,
+		setBulkEditorModal,
+		setWorkflowDispatchModal,
+		setArtifactDownloadModal,
+		setReleaseEditorModal,
 	})
 
 	const { commandPaletteCommands, selectedCommandIndex, selectedCommand, runCommand, runCommandById } = useCommandRegistry({
@@ -901,6 +1402,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		openSelectedDiffComment,
 		toggleDiffCommentRange,
 		openDiffCommentModal,
+		openDiffSuggestionModal,
 		openReplyToSelectedComment,
 		openEditSelectedComment,
 		openDeleteSelectedComment,
@@ -922,12 +1424,23 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const runCommandPaletteCommand = (command: AppCommand) => {
 		runCommand(command, { notifyDisabled: true, closePalette: true })
 	}
+	const toggleCommentSubmitMode = () => {
+		setCommentModal((current) => (current.target.kind === "diff" ? { ...current, submitMode: current.submitMode === "post" ? "queue" : "post", error: null } : current))
+	}
+	const toggleCommentContentKind = () => {
+		setCommentModal((current) =>
+			current.target.kind === "diff" ? { ...current, contentKind: current.contentKind === "comment" ? "suggestion" : "comment", error: null } : current,
+		)
+	}
 	const { stepSelected, stepSelectedDown, stepSelectedUp, stepSelectedDownWithLoadMore, stepSelectedUpWrap, moveSelectedToPreviousGroup, moveSelectedToNextGroup } =
 		useListSelectionStepping({
 			activeWorkspaceSurface,
 			visiblePullRequests,
 			issues,
 			repositoryItems,
+			releases,
+			resourceItemsLength: resourcesView.active?.items.length ?? 0,
+			notificationItemsLength: notificationsView.items.length,
 			loadMoreSlotAvailable,
 			issueLoadMoreSlotAvailable,
 			groupStarts,
@@ -935,6 +1448,9 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			setSelectedIndex,
 			setSelectedIssueIndex,
 			setSelectedRepositoryIndex,
+			setSelectedReleaseIndex,
+			setSelectedResourceIndex: (next) => resourcesView.active?.setSelectedIndex(next),
+			setSelectedNotificationIndex: notificationsView.setSelectedIndex,
 		})
 	const handleQuitOrClose = () => {
 		if (themeModalActive) {
@@ -951,28 +1467,49 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	useAppKeymap({
 		disabled: terminalTooSmall,
 		closeModalActive,
+		itemEditorModalActive,
+		metadataSelectorModalActive,
+		bulkEditorModalActive,
 		pullRequestStateModalActive,
 		mergeModalActive,
 		commentThreadModalActive,
 		changedFilesModalActive,
 		filterModalActive,
 		submitReviewModalActive,
+		pendingReviewModalActive,
 		labelModalActive,
 		themeModalActive,
 		openRepositoryModalActive,
 		commentModalActive,
 		deleteCommentModalActive,
 		commandPaletteActive,
+		releaseEditorModalActive,
+		deleteReleaseModalActive,
+		resourceEditorModalActive: activeModal._tag === "ResourceEditor",
+		deleteResourceModalActive: activeModal._tag === "DeleteResource",
+		runActionModalActive,
+		workflowDispatchModalActive,
+		artifactDownloadModalActive,
 		filterMode,
 		diffFullView,
-		runsFullView: runsView.runsFullView,
-		runsViewCtx: runsView.ctx,
+		runsFullView: runsView.runsFullView || activeWorkspaceSurface === "actions",
+		runsViewCtx: activeWorkspaceSurface === "actions" ? { ...actionsView.ctx, repositoryActions: true, runCommandById } : runsView.ctx,
 		detailFullView,
 		commentsViewActive,
 		themeModal,
 		submitReviewModal,
 		mergeModal,
 		commandPaletteSelectedCommand: selectedCommand,
+		releaseEditorModal,
+		itemEditorModal,
+		metadataSelectorModal,
+		bulkEditorModal,
+		deleteReleaseModalRunning: deleteReleaseModal.running,
+		runActionModal,
+		workflowDispatchModal,
+		artifactDownloadModal,
+		resourceEditorModal,
+		deleteResourceModalRunning: deleteResourceModal.running,
 		activeWorkspaceSurface,
 		workspaceTabSurfaces,
 		closeActiveModal,
@@ -992,6 +1529,12 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		moveFilterSelection,
 		setSubmitReviewModal,
 		confirmSubmitReview,
+		movePendingReviewSelection,
+		jumpPendingReviewComment,
+		editPendingReviewComment,
+		deletePendingReviewComment,
+		submitPendingReviewFromPane,
+		discardPendingReviewFromPane,
 		editSubmitReview,
 		moveSubmitReviewActionSelection,
 		toggleLabelAtIndex,
@@ -1003,8 +1546,34 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		moveThemeSelection,
 		openRepositoryFromInput,
 		confirmDeleteComment,
+		toggleCommentSubmitMode,
+		toggleCommentContentKind,
 		runCommandPaletteCommand,
 		moveCommandPaletteSelection,
+		moveReleaseEditorFocus: releaseActions.moveFocus,
+		toggleReleaseEditorFocused: releaseActions.toggleFocused,
+		submitReleaseEditor: releaseActions.submit,
+		confirmDeleteRelease: releaseActions.confirmDelete,
+		confirmRunAction: actionsModalActions.confirmRunAction,
+		moveWorkflowDispatchFocus: actionsModalActions.moveWorkflowDispatchFocus,
+		cycleWorkflowDispatchValue: actionsModalActions.cycleWorkflowDispatchValue,
+		confirmWorkflowDispatch: actionsModalActions.confirmWorkflowDispatch,
+		toggleArtifactFocus: actionsModalActions.toggleArtifactFocus,
+		moveArtifactSelection: actionsModalActions.moveArtifactSelection,
+		confirmArtifactDownload: actionsModalActions.confirmArtifactDownload,
+		moveResourceEditorFocus: resourceActions.moveFocus,
+		cycleResourceEditorChoice: resourceActions.cycleChoice,
+		submitResourceEditor: resourceActions.submit,
+		confirmDeleteResource: resourceActions.confirmDelete,
+		moveItemEditorFocus,
+		toggleItemEditorDraft,
+		submitItemEditor,
+		moveMetadataSelector,
+		toggleMetadataSelector,
+		closeOrCancelBulkEditor,
+		moveBulkAction,
+		toggleBulkEditorFocus,
+		submitBulkEditor,
 		setFilterDraft,
 		setFilterMode,
 		setFilterQuery,
@@ -1033,10 +1602,16 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		visiblePullRequestsLength: visiblePullRequests.length,
 		issuesLength: issues.length,
 		repositoryItemsLength: repositoryItems.length,
+		releasesLength: releases.length,
+		resourceItemsLength: resourcesView.active?.items.length ?? 0,
+		notificationItemsLength: notificationsView.items.length,
 		selectedRepository,
 		selectedPullRequest,
 		selectedIssue,
 		selectedRepositoryItem,
+		selectedRelease,
+		selectedResourceItem: resourcesView.active?.selectedItem ?? null,
+		selectedNotification: notificationsView.selected,
 		isWideLayout,
 		loadMoreRowSelected,
 		loadMoreIssueRowSelected,
@@ -1063,11 +1638,21 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setSelectedIndex,
 		setSelectedIssueIndex,
 		setSelectedRepositoryIndex,
+		setSelectedReleaseIndex,
+		setSelectedResourceIndex: (next) => resourcesView.active?.setSelectedIndex(next),
+		setSelectedNotificationIndex: notificationsView.setSelectedIndex,
 		handleQuitOrClose,
 		setCommandPalette,
 		setOpenRepositoryModal,
 		setChangedFilesModal,
 		setLabelModal,
+		setReleaseEditorModal,
+		setItemEditorModal,
+		setMetadataSelectorModal,
+		setBulkEditorModal,
+		setWorkflowDispatchModal,
+		setArtifactDownloadModal,
+		setResourceEditorModal,
 		editThemeQuery,
 	})
 
@@ -1110,6 +1695,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		issuesStatus,
 		issuesError,
 		repositoryItems,
+		releaseCount: releases.length,
+		actionRunCount: actionsView.runsState.status === "ready" ? actionsView.runsState.value.length : 0,
+		branchCount: resourcesView.branches.length,
+		milestoneCount: resourcesView.milestones.length,
+		environmentCount: resourcesView.environments.length,
+		runnerCount: resourcesView.runners.length,
+		notificationCount: notificationsView.items.filter((item) => item.unread).length,
 		selectedIssueIndex,
 		selectedRepositoryIndex,
 		hasMorePullRequests,
@@ -1169,6 +1761,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedOrderedComment,
 		username,
 		selectedCommentsLength: selectedComments.length,
+		selectedItemCount: selectedItemUrls.length,
 		selectedCommentSubject,
 		activeWorkspaceSurface,
 		selectedRepositoryItem,
@@ -1176,6 +1769,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		selectedPullRequest,
 		pullRequestStatus,
 		issuesStatus,
+		releaseStatus,
+		selectedRelease,
 		isActiveSurfaceLoading,
 		closeModal,
 		pullRequestStateModal,
@@ -1211,15 +1806,28 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			commentsViewActive,
 			diffFullView,
 			runsView,
+			actionsView,
+			resourcesView,
+			notificationsView,
 			detailFullView,
 			layout,
 			derivations,
 			issueActiveFilterLabel,
 			pullRequestActiveFilterLabel,
 			selectedRepositoryItem,
+			selectedRepository,
 			selectedRepositoryDetails,
 			selectedIssue,
 			selectedPullRequest,
+			selectedItemUrls,
+			toggleItemSelection,
+			releases,
+			selectedRelease,
+			selectedReleaseIndex,
+			releaseStatus,
+			releaseError,
+			releaseView,
+			setSelectedReleaseIndex,
 			selectedComments,
 			selectedCommentsStatus,
 			selectedCommentsLoadState,
@@ -1239,6 +1847,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			selectedDiffCommentAnchor,
 			selectedDiffCommentLabel,
 			selectedDiffCommentThread,
+			pendingReviewCount: selectedPendingReview?.comments.length ?? 0,
 			selectDiffCommentLine,
 			setDiffRenderableRef,
 			loadingIndicator,
@@ -1266,6 +1875,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			selectedItemLabels,
 			commentAnchorLabel,
 			selectedDiffCommentThread,
+			pendingReviewCount: selectedPendingReview?.comments.length ?? 0,
+			pendingReview: selectedPendingReview,
 			changedFileResults,
 			readyDiffFileCount: readyDiffFiles.length,
 			commandPaletteCommands,
@@ -1274,6 +1885,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			onRunCommand: runCommandPaletteCommand,
 			onCommentChange: setCommentEditorValue,
 			onCommentSubmit: submitCommentModal,
+			onSelectMetadataOption: (index: number) => setMetadataSelectorModal((current) => ({ ...current, selectedIndex: index })),
+			onToggleMetadataOption: toggleMetadataSelector,
 			layouts: modalLayouts,
 			// Picker takes over the docked panel when visible; suppressing the
 			// modal here keeps both presentations from rendering at once.

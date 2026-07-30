@@ -46,6 +46,13 @@ export interface WorkspaceDerivationsInput {
 	readonly issuesStatus: LoadStatus
 	readonly issuesError: string | null
 	readonly repositoryItems: readonly RepositoryListItem[]
+	readonly releaseCount: number
+	readonly actionRunCount: number
+	readonly branchCount: number
+	readonly milestoneCount: number
+	readonly environmentCount: number
+	readonly runnerCount: number
+	readonly notificationCount: number
 	readonly selectedIssueIndex: number
 	readonly selectedRepositoryIndex: number
 	readonly hasMorePullRequests: boolean
@@ -103,7 +110,18 @@ export interface WorkspaceDerivations {
 	readonly narrowIssueListNeedsScroll: boolean
 	readonly repoListNeedsScroll: boolean
 	readonly narrowRepoListNeedsScroll: boolean
-	readonly workspaceTabCounts: { readonly repos: number; readonly pullRequests: number | string; readonly issues: number | string }
+	readonly workspaceTabCounts: {
+		readonly repos: number
+		readonly pullRequests: number | string
+		readonly issues: number | string
+		readonly releases: number
+		readonly actions: number
+		readonly branches: number
+		readonly milestones: number
+		readonly environments: number
+		readonly runners: number
+		readonly notifications: number
+	}
 	readonly filterPlaceholder: string
 	readonly workspaceTabJunctions: readonly number[]
 	readonly workspaceTopDividerJunctions: readonly { readonly at: number; readonly char: string }[]
@@ -148,6 +166,13 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		issuesStatus,
 		issuesError,
 		repositoryItems,
+		releaseCount,
+		actionRunCount,
+		branchCount,
+		milestoneCount,
+		environmentCount,
+		runnerCount,
+		notificationCount,
 		selectedIssueIndex,
 		selectedRepositoryIndex,
 		hasMorePullRequests,
@@ -250,8 +275,9 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 	const showWideSplit = activeWorkspaceSurface === "pullRequests" && isWideLayout && !detailFullView && !diffFullView && !runsFullView && !commentsViewActive
 	const showRepoSplit = activeWorkspaceSurface === "repos" && isWideLayout && !detailFullView && !diffFullView && !runsFullView && !commentsViewActive
 	const showIssueSplit = activeWorkspaceSurface === "issues" && isWideLayout && !detailFullView && !diffFullView && !runsFullView && !commentsViewActive
+	const showReleaseSplit = activeWorkspaceSurface === "releases" && isWideLayout && !detailFullView && !diffFullView && !runsFullView && !commentsViewActive
 	const issueJunctions = showIssueSplit ? getIssueDetailJunctionRows(selectedIssue, rightPaneWidth) : []
-	const showPaneSplit = showWideSplit || showRepoSplit || showIssueSplit
+	const showPaneSplit = showWideSplit || showRepoSplit || showIssueSplit || showReleaseSplit
 	const issueFilterBarHeight = issueActiveFilterLabel ? ACTIVE_FILTER_BAR_HEIGHT : 0
 	const wideIssueRowsHeight = Math.max(1, wideBodyHeight - issueFilterBarHeight)
 	const narrowIssueRowsHeight = Math.max(1, narrowIssueListHeight - issueFilterBarHeight)
@@ -264,9 +290,25 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		repos: repositoryItems.length,
 		pullRequests: hasMorePullRequests ? `${visiblePullRequests.length}+` : visiblePullRequests.length,
 		issues: hasMoreIssues ? `${issues.length}+` : issues.length,
+		releases: releaseCount,
+		actions: actionRunCount,
+		branches: branchCount,
+		milestones: milestoneCount,
+		environments: environmentCount,
+		runners: runnerCount,
+		notifications: notificationCount,
 	}
-	const filterPlaceholder = activeWorkspaceSurface === "pullRequests" ? "filter pull requests" : activeWorkspaceSurface === "issues" ? "filter issues" : "filter repositories"
-	const workspaceTabJunctions = workspaceTabSeparatorColumns(workspaceTabCounts, workspaceTabSurfaces)
+	const filterPlaceholder =
+		activeWorkspaceSurface === "pullRequests"
+			? "filter pull requests"
+			: activeWorkspaceSurface === "issues"
+				? "filter issues"
+				: activeWorkspaceSurface === "releases"
+					? "filter releases"
+					: activeWorkspaceSurface === "notifications"
+						? "filter notifications"
+						: "filter repositories"
+	const workspaceTabJunctions = workspaceTabSeparatorColumns(workspaceTabCounts, workspaceTabSurfaces, Math.max(24, contentWidth - 1), activeWorkspaceSurface)
 	// Three horizontal dividers, three junction sets. The diff file panel
 	// (when visible) introduces a vertical rail that starts at the top divider
 	// and stops at the pre-footer divider, so we add `┬` and `┴` at those

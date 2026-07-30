@@ -5,6 +5,7 @@ import { colors } from "../colors.js"
 import { centerCell, Divider, fitCell, Filler, PaddedRow, PlainLine, TextLine } from "../primitives.js"
 import { shortRepoName } from "../pullRequests.js"
 import { conclusionLabel, formatDuration, type RunDetailRow, type RunGlyphKind, runGlyph, runGlyphKind, stepRowKey } from "./runsRows.js"
+import { actionLogWindow } from "./logWindow.js"
 
 // A selectable, clickable row whose background spans the full pane width (the
 // box carries the width + bg; the inner TextLine adopts the same bg so text and
@@ -29,7 +30,10 @@ const RunRow = ({
 	</box>
 )
 
-type ResultState<A> = { readonly status: "loading" } | { readonly status: "error"; readonly message: string } | { readonly status: "ready"; readonly value: A }
+type ResultState<A> =
+	| { readonly status: "loading" }
+	| { readonly status: "error"; readonly message: string }
+	| { readonly status: "ready"; readonly value: A; readonly refreshing?: boolean }
 
 const GLYPH_COLOR: Record<RunGlyphKind, string> = {
 	success: colors.status.passing,
@@ -53,7 +57,8 @@ const relativeAge = (date: Date | null, now: Date): string => {
 }
 
 export interface RunsPaneProps {
-	readonly pullRequest: PullRequestItem
+	readonly pullRequest: PullRequestItem | null
+	readonly repository?: string
 	readonly inDetail: boolean
 	readonly runsState: ResultState<readonly WorkflowRun[]>
 	readonly detailState: ResultState<WorkflowRunDetails> | null
@@ -66,6 +71,12 @@ export interface RunsPaneProps {
 	readonly height: number
 	readonly loadingIndicator: string
 	readonly showScrollbar: boolean
+	readonly logText?: string | null
+	readonly logLoading?: boolean
+	readonly logError?: string | null
+	readonly filterSummary?: string
+	readonly logScrollTop?: number
+	readonly filtersActive?: boolean
 }
 
 const HeaderLine = ({ left, right, width }: { left: string; right: string; width: number }) => {
@@ -190,6 +201,13 @@ export const PullRequestRunsPane = ({
 	height,
 	loadingIndicator,
 	showScrollbar,
+	repository: repositoryOverride,
+	logText = null,
+	logLoading = false,
+	logError = null,
+	filterSummary,
+	logScrollTop = 0,
+	filtersActive = false,
 }: RunsPaneProps) => {
 	const now = new Date()
 	// Chrome above the body: header row + subline row + divider row = 3.
@@ -197,21 +215,32 @@ export const PullRequestRunsPane = ({
 	// `contentWidth` is the padded text width (used inside PaddedRow); rows and the
 	// divider span the full pane so the selected-row highlight reaches the border.
 	const paneWidth = contentWidth + 2
-	const title = `${shortRepoName(pullRequest.repository)} #${pullRequest.number}`
+	const repository = pullRequest?.repository ?? repositoryOverride ?? ""
+	const title = pullRequest ? `${shortRepoName(repository)} #${pullRequest.number}` : `${shortRepoName(repository)} Actions`
 
 	const headerRight =
-		inDetail && detailState?.status === "ready" ? `${detailState.value.event} → ${detailState.value.headBranch}` : `${pullRequest.headRefName} → ${pullRequest.baseRefName}`
+		inDetail && detailState?.status === "ready"
+			? `${detailState.value.event} → ${detailState.value.headBranch}`
+			: pullRequest
+				? `${pullRequest.headRefName} → ${pullRequest.baseRefName}`
+				: "repository runs"
 
 	const subline =
 		inDetail && detailState?.status === "ready"
-			? `${detailState.value.headSha.slice(0, 7)} · ${pullRequest.author}`
-			: `runs for ${pullRequest.headRefOid.slice(0, 7)} · ${pullRequest.author}`
+			? `${detailState.value.headSha.slice(0, 7)}${pullRequest ? ` · ${pullRequest.author}` : ""}`
+			: pullRequest
+				? `runs for ${pullRequest.headRefOid.slice(0, 7)} · ${pullRequest.author}`
+				: filterSummary
+					? `${filterSummary} · newest first`
+					: "all workflows · newest first"
+	const sublineWithRefresh = runsState.status === "ready" && runsState.refreshing ? `${subline} · refreshing` : subline
 
 	// Every row is height 1, so row offset === selection index. Keep the focused
 	// row inside the viewport on keyboard moves (j/k, ctrl-d/u, gg/G) — matching
 	// the diff/comments panes.
-	const rowCount = inDetail ? detailRows.length : runsState.status === "ready" ? runsState.value.length : 0
-	const selection = inDetail ? detailSelection : runsSelection
+	const logWindow = logText === null ? null : actionLogWindow(logText, logScrollTop, bodyHeight)
+	const rowCount = logWindow ? logWindow.totalLines : inDetail ? detailRows.length : runsState.status === "ready" ? runsState.value.length : 0
+	const selection = logWindow ? logWindow.scrollTop : inDetail ? detailSelection : runsSelection
 	const needsScroll = rowCount > bodyHeight
 	const scrollboxRef = useRef<ScrollBoxRenderable | null>(null)
 	useEffect(() => {
@@ -226,10 +255,28 @@ export const PullRequestRunsPane = ({
 	}, [selection, needsScroll, bodyHeight, rowCount])
 
 	const body = (() => {
+		if (logLoading) return centeredMessage(`${loadingIndicator} Loading job log`, colors.muted, contentWidth, bodyHeight, "log-loading")
+		if (logError) return centeredMessage(logError, colors.error, contentWidth, bodyHeight, "log-error")
+		if (logText !== null) {
+			return (
+				<box flexDirection="column">
+					{logWindow!.lines.map((line, index) => (
+						<PlainLine key={`log-${logWindow!.scrollTop + index}`} text={fitCell(line, contentWidth)} fg={colors.text} />
+					))}
+				</box>
+			)
+		}
 		if (!inDetail) {
 			if (runsState.status === "loading") return centeredMessage(`${loadingIndicator} Loading runs`, colors.muted, contentWidth, bodyHeight, "runs-loading")
 			if (runsState.status === "error") return centeredMessage(runsState.message, colors.error, contentWidth, bodyHeight, "runs-error")
-			if (runsState.value.length === 0) return centeredMessage("No workflow runs for this commit", colors.muted, contentWidth, bodyHeight, "no-runs")
+			if (runsState.value.length === 0)
+				return centeredMessage(
+					pullRequest ? "No workflow runs for this commit" : filtersActive ? "No workflow runs match these filters" : "No workflow runs in this repository",
+					colors.muted,
+					contentWidth,
+					bodyHeight,
+					"no-runs",
+				)
 			return <RunsList runs={runsState.value} selection={runsSelection} paneWidth={paneWidth} now={now} onSelectRow={onSelectRow} onActivateRow={onActivateRow} />
 		}
 		if (!detailState || detailState.status === "loading") return centeredMessage(`${loadingIndicator} Loading run`, colors.muted, contentWidth, bodyHeight, "run-loading")
@@ -244,12 +291,12 @@ export const PullRequestRunsPane = ({
 			</PaddedRow>
 			<PaddedRow>
 				<TextLine>
-					<span fg={colors.muted}>{fitCell(subline, contentWidth)}</span>
+					<span fg={colors.muted}>{fitCell(sublineWithRefresh, contentWidth)}</span>
 				</TextLine>
 			</PaddedRow>
 			<Divider width={paneWidth} />
 			<box height={bodyHeight} flexDirection="column">
-				{needsScroll ? (
+				{needsScroll && !logWindow ? (
 					<scrollbox ref={scrollboxRef} focusable={false} flexGrow={1} verticalScrollbarOptions={{ visible: showScrollbar }}>
 						{body}
 					</scrollbox>

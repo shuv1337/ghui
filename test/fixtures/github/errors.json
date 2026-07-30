@@ -1,0 +1,22 @@
+{
+	"authentication": {
+		"exitCode": 4,
+		"stderr": "To get started with GitHub CLI, run: gh auth login"
+	},
+	"permission": {
+		"exitCode": 1,
+		"stderr": "HTTP 403: Resource not accessible by integration"
+	},
+	"primaryRateLimit": {
+		"exitCode": 1,
+		"stderr": "API rate limit already exceeded"
+	},
+	"secondaryRateLimit": {
+		"exitCode": 1,
+		"stderr": "You have exceeded a secondary rate limit"
+	},
+	"notFound": {
+		"exitCode": 1,
+		"stderr": "HTTP 404: Not Found"
+	}
+}

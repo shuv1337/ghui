@@ -1,0 +1,1 @@
+{"this":"fixture intentionally stops before the closing brace"

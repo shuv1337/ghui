@@ -7,6 +7,7 @@ import { diffFullViewAtom, diffReadyAtom } from "../ui/diff/atoms.js"
 import { runsFullViewAtom } from "../ui/runs/atoms.js"
 import { filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
 import { selectedIssueAtom } from "../ui/issues/atoms.js"
+import { selectedReleaseAtom } from "../surfaces/release/atoms.js"
 import {
 	activeViewAtom,
 	isLoadingMorePullRequestsAtom,
@@ -15,9 +16,10 @@ import {
 	pullRequestStatusAtom,
 	selectedPullRequestAtom,
 } from "../ui/pullRequests/atoms.js"
-import { selectedRepositoryAtom, workspaceSurfaceAtom } from "../workspace/atoms.js"
-import { type WorkspaceSurface, workspaceSurfaceLabels } from "../workspaceSurfaces.js"
+import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
+import { type WorkspaceSurface, workspaceSurfaceDescriptor, workspaceSurfaceLabels } from "../workspaceSurfaces.js"
 import { commandRuntimeAtom } from "./runtimeAtom.js"
+import { lastBulkRetryUrlsAtom, selectedItemUrlsAtom } from "../item/selection.js"
 
 // Shared derivations that command titles / subtitles / disabledReason fields
 // read from. Centralising them here means a command's data declaration stays
@@ -25,6 +27,9 @@ import { commandRuntimeAtom } from "./runtimeAtom.js"
 // command can compose the same gating without redoing the logic.
 
 export const activeSurfaceLabelAtom = Atom.make((get) => workspaceSurfaceLabels[get(workspaceSurfaceAtom)].toLowerCase())
+export const filterUnsupportedReasonAtom = Atom.make((get) =>
+	workspaceSurfaceDescriptor(get(workspaceSurfaceAtom)).filterable ? null : "Filtering is not available on this surface.",
+)
 
 // `null` when the pull request surface is active. Otherwise a sentence telling
 // the user that PR commands won't run in the current surface. Used as the
@@ -86,14 +91,34 @@ export const selectedIssueLabelAtom = Atom.make((get) => {
 	return issue ? `#${issue.number} ${issue.repository}` : "No issue selected"
 })
 
+export const selectedReleaseLabelAtom = Atom.make((get) => {
+	const release = get(selectedReleaseAtom)
+	return release ? `${release.tagName} ${release.repository}` : "No release selected"
+})
+
+export const releaseSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "releases" ? null : "Switch to the releases surface first."))
+export const releaseSelectedReasonAtom = Atom.make((get) => {
+	if (get(workspaceSurfaceAtom) !== "releases") return "Switch to the releases surface first."
+	return get(selectedReleaseAtom) ? null : "Select a release first."
+})
+
 export const selectedItemLabelAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "issues" ? get(selectedIssueLabelAtom) : get(selectedPullRequestLabelAtom)))
 
 // Workspace surface helpers — generated per surface so commands can be data.
 export const workspaceSurfaceAlreadyActiveReasonAtom = (surface: WorkspaceSurface): Atom.Atom<string | null> =>
-	Atom.make((get) => (get(workspaceSurfaceAtom) === surface ? "Already showing this surface." : null))
+	Atom.make((get) => {
+		if (!get(workspaceTabSurfacesAtom).includes(surface)) return "This surface requires repository scope."
+		return get(workspaceSurfaceAtom) === surface ? "Already showing this surface." : null
+	})
 
 export const workspaceSurfaceSubtitleAtom = (surface: WorkspaceSurface): Atom.Atom<string> =>
-	Atom.make((get) => (get(workspaceSurfaceAtom) === surface ? "Already showing this surface" : "Switch project surface"))
+	Atom.make((get) =>
+		!get(workspaceTabSurfacesAtom).includes(surface)
+			? "Open a repository to use this surface"
+			: get(workspaceSurfaceAtom) === surface
+				? "Already showing this surface"
+				: "Switch project surface",
+	)
 
 // Issue-only commands need a slightly different gating: only enabled when the
 // issues surface is active *and* there's a selected issue.
@@ -106,6 +131,36 @@ export const noOpenIssueReasonAtom = Atom.make((get): string | null => {
 	if (!issue) return "Select an issue first."
 	return issue.state === "open" ? null : "Issue is not open."
 })
+
+export const noClosedIssueReasonAtom = Atom.make((get): string | null => {
+	const surface = get(issueSurfaceReasonAtom)
+	if (surface !== null) return surface
+	const issue = get(selectedIssueAtom)
+	if (!issue) return "Select an issue first."
+	return issue.state === "closed" ? null : "Issue is already open."
+})
+
+export const noClosedPullRequestReasonAtom = Atom.make((get): string | null => {
+	const surface = get(pullRequestSurfaceReasonAtom)
+	if (surface !== null) return surface
+	const pullRequest = get(selectedPullRequestAtom)
+	if (!pullRequest) return "Select a pull request first."
+	return pullRequest.state === "closed" ? null : "Pull request is not closed."
+})
+
+export const repositoryItemCreateReasonAtom = Atom.make((get): string | null => {
+	if (!get(selectedRepositoryAtom)) return "Open a repository before creating an item."
+	const surface = get(workspaceSurfaceAtom)
+	return surface === "issues" || surface === "pullRequests" ? null : "Switch to Issues or Pull Requests first."
+})
+
+export const bulkSelectionReasonAtom = Atom.make((get): string | null => {
+	const surface = get(workspaceSurfaceAtom)
+	if (surface !== "issues" && surface !== "pullRequests") return "Bulk operations are available on Issues and Pull Requests."
+	return get(selectedItemUrlsAtom).length > 0 ? null : "Select at least one item with Space."
+})
+
+export const bulkRetryReasonAtom = Atom.make((get) => (get(lastBulkRetryUrlsAtom).length > 0 ? null : "No retryable bulk failures."))
 
 // Whichever item is currently focused for comment-style operations: issue on
 // the issues surface, PR on the PR surface, null otherwise. Used as a target

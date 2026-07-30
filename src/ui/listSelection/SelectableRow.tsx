@@ -1,3 +1,4 @@
+import type { MouseEvent } from "@opentui/core"
 import { type ReactNode, useState } from "react"
 import { colors, rowHoverBackground } from "../colors.js"
 
@@ -12,6 +13,7 @@ export interface SelectableRowProps {
 	readonly selected: boolean
 	readonly hovered: boolean
 	readonly onSelect: () => void
+	readonly onToggleSelection?: () => void
 	readonly onHoverChange: (hovered: boolean) => void
 	readonly children: (rowBg: string | undefined) => ReactNode
 }
@@ -22,15 +24,22 @@ export interface SelectableRowProps {
  * receiving the resolved `rowBg` so inner `<TextLine bg={rowBg}>` lines stay
  * in sync with the wrapper.
  */
-export const SelectableRow = ({ width, height, selected, hovered, onSelect, onHoverChange, children }: SelectableRowProps) => {
+export const SelectableRow = ({ width, height, selected, hovered, onSelect, onToggleSelection, onHoverChange, children }: SelectableRowProps) => {
 	const rowBg = computeRowBg(selected, hovered)
+	const handleMouseDown = (event: MouseEvent) => {
+		if (event.modifiers.ctrl && onToggleSelection) {
+			onToggleSelection()
+			return
+		}
+		onSelect()
+	}
 	return (
 		<box
 			width={width}
 			{...(height !== undefined ? { height } : {})}
 			flexDirection="column"
 			{...(rowBg ? { backgroundColor: rowBg } : {})}
-			onMouseDown={onSelect}
+			onMouseDown={handleMouseDown}
 			onMouseOver={() => onHoverChange(true)}
 			onMouseOut={() => onHoverChange(false)}
 		>

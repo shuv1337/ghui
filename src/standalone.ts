@@ -1,69 +1,15 @@
 import packageJson from "../package.json" with { type: "json" }
-import { parseRepositoryInput } from "./pullRequestViews.js"
+import { runCli } from "./cli.js"
+import { makeCliDependencies } from "./cliDependencies.js"
 
-const help = `ghui ${packageJson.version}
-
-Terminal UI for GitHub pull requests.
-
-Usage:
-  ghui              Start the TUI
-  ghui --repo owner/name
-                    Start in a repository view
-  ghui -v, --version
-                    Print the installed version
-  ghui -h, --help   Show this help message
-`
-
-const args = Bun.argv.slice(2)
-const repoFlag = args.indexOf("--repo")
-if (repoFlag >= 0) {
-	const value = args[repoFlag + 1]
-	const repository = value ? parseRepositoryInput(value) : null
-	if (!repository) {
-		console.error("Invalid --repo value. Expected owner/name.")
-		process.exit(1)
-	}
-	process.env.GHUI_REPOSITORY = repository
-	args.splice(repoFlag, 2)
-}
-const command = args[0]
-const commands = ["help", "version"]
-
-const editDistance = (a: string, b: string) => {
-	const distances = Array.from({ length: a.length + 1 }, (_, i) => [i])
-	for (let j = 1; j <= b.length; j++) distances[0]![j] = j
-
-	for (let i = 1; i <= a.length; i++) {
-		for (let j = 1; j <= b.length; j++) {
-			distances[i]![j] = Math.min(distances[i - 1]![j]! + 1, distances[i]![j - 1]! + 1, distances[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1))
-		}
-	}
-
-	return distances[a.length]![b.length]!
-}
-
-if (command === "-h" || command === "--help" || command === "help") {
-	console.log(help)
-	process.exit(0)
-}
-
-if (command === "-v" || command === "--version" || command === "version") {
-	console.log(packageJson.version)
-	process.exit(0)
-}
-
-if (command === "upgrade") {
-	console.error("Use your package manager to upgrade ghui, for example `brew upgrade ghui`.")
+try {
+	const result = await runCli(Bun.argv.slice(2), makeCliDependencies(packageJson.version))
+	if (result.stdout) process.stdout.write(result.stdout)
+	if (result.stderr) process.stderr.write(result.stderr)
+	if (result.repository) process.env.GHUI_REPOSITORY = result.repository
+	if (result.launchTui) await import("./index.js")
+	else process.exit(result.exitCode)
+} catch (cause) {
+	process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`)
 	process.exit(1)
 }
-
-if (typeof command === "string") {
-	const unknownCommand = command
-	const suggestion = commands.find((name) => editDistance(unknownCommand, name) <= 2)
-	console.error(`Unknown command: ${unknownCommand}`)
-	if (suggestion) console.error(`Did you mean: ghui ${suggestion}?`)
-	console.error("Run `ghui --help` for usage.")
-	process.exit(1)
-}
-
-await import("./index.js")

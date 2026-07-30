@@ -1,5 +1,6 @@
-import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { currentReleaseTargetId, findReleaseTarget, releaseTargets } from "./release-targets.js"
 
 const root = process.cwd()
@@ -43,8 +44,21 @@ for (const target of selectedTargets()) {
 	await chmod(binaryPath, 0o755)
 
 	if (target.id === hostTargetId) {
-		const version = Bun.spawnSync({ cmd: [binaryPath, "--version"], cwd: root, stdout: "pipe", stderr: "pipe" })
-		if (version.exitCode !== 0) throw new Error(`Standalone smoke failed for ${target.id}: ${version.stderr.toString()}`)
+		const smokeDirectory = await mkdtemp(join(tmpdir(), "ghui-standalone-smoke-"))
+		try {
+			const smokeEnvironment = { ...process.env, GHUI_CACHE_PATH: "off" }
+			const version = Bun.spawnSync({ cmd: [binaryPath, "--version"], cwd: smokeDirectory, env: smokeEnvironment, stdout: "pipe", stderr: "pipe" })
+			if (version.exitCode !== 0) throw new Error(`Standalone version smoke failed for ${target.id}: ${version.stderr.toString()}`)
+			const help = Bun.spawnSync({ cmd: [binaryPath, "--help"], cwd: smokeDirectory, env: smokeEnvironment, stdout: "pipe", stderr: "pipe" })
+			if (help.exitCode !== 0 || !help.stdout.toString().includes("ghui doctor")) throw new Error(`Standalone help smoke failed for ${target.id}: ${help.stderr.toString()}`)
+			const cache = Bun.spawnSync({ cmd: [binaryPath, "cache", "list", "--json"], cwd: smokeDirectory, env: smokeEnvironment, stdout: "pipe", stderr: "pipe" })
+			if (cache.exitCode !== 0 || !cache.stdout.toString().includes('"health": "disabled"'))
+				throw new Error(`Standalone cache smoke failed for ${target.id}: ${cache.stdout.toString()}${cache.stderr.toString()}`)
+			const noTty = Bun.spawnSync({ cmd: [binaryPath], cwd: smokeDirectory, env: smokeEnvironment, stdout: "pipe", stderr: "pipe" })
+			if (noTty.exitCode !== 2 || !noTty.stderr.toString().includes("interactive TTY")) throw new Error(`Standalone no-TTY smoke failed for ${target.id}`)
+		} finally {
+			await rm(smokeDirectory, { recursive: true, force: true })
+		}
 	}
 
 	run(["tar", "-czf", assetPath, "-C", stageDir, "ghui"])

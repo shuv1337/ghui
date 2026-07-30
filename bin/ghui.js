@@ -24,14 +24,20 @@ const archMap = {
 
 const help = `ghui ${packageJson.version}
 
-Terminal UI for GitHub pull requests.
+Terminal UI and command-line tools for GitHub repositories.
 
 Usage:
-  ghui              Start the TUI
-  ghui upgrade      Upgrade ghui to the latest npm release
-  ghui -v, --version
-                    Print the installed version
-  ghui -h, --help   Show this help message
+  ghui [--repo owner/name]             Start the TUI
+  ghui doctor [--json]                 Diagnose GitHub, config, cache, and terminal readiness
+  ghui cache list [--json]             Inspect cache files and health
+  ghui cache clean [--dry-run|--apply] [--json]
+                                       Preview cleanup by default; --apply removes exact cache files
+  ghui open <issue|pr|run|job|milestone|release|environment> <id>
+                                       Open a GitHub target in the browser
+  ghui repos [--json]                  List repositories visible to the authenticated user
+  ghui upgrade                         Upgrade ghui to the latest npm release
+  ghui -v, --version                   Print the installed version
+  ghui -h, --help                      Show this help message
 `
 
 const run = (target, args = process.argv.slice(2)) => {

@@ -1,5 +1,6 @@
 import type { AppCtx } from "../all.ts"
 import { buildChangedFilesModalCtx, type BuildChangedFilesModalCtxInput } from "./changedFilesModalCtx.ts"
+import type { BulkEditorModalCtx } from "../bulkEditorModal.ts"
 import { buildCommandPaletteCtx, type BuildCommandPaletteCtxInput } from "./commandPaletteCtx.ts"
 import { buildCommentModalCtx, type BuildCommentModalCtxInput } from "./commentModalCtx.ts"
 import { buildCommentsViewCtx, type BuildCommentsViewCtxInput } from "./commentsViewCtx.ts"
@@ -12,7 +13,13 @@ import { buildListNavCtx, type BuildListNavCtxInput } from "./listNavCtx.ts"
 import { buildMergeModalCtx, type BuildMergeModalCtxInput } from "./mergeModalCtx.ts"
 import { buildPullRequestStateModalCtx, type BuildPullRequestStateModalCtxInput } from "./pullRequestStateModalCtx.ts"
 import { buildSubmitReviewModalCtx, type BuildSubmitReviewModalCtxInput } from "./submitReviewModalCtx.ts"
+import { buildPendingReviewModalCtx, type BuildPendingReviewModalCtxInput } from "./pendingReviewModalCtx.ts"
 import { buildThemeModalCtx, type BuildThemeModalCtxInput } from "./themeModalCtx.ts"
+import type { DeleteReleaseModalCtx } from "../deleteReleaseModal.ts"
+import type { ReleaseEditorModalCtx } from "../releaseEditorModal.ts"
+import type { ItemEditorModalCtx } from "../itemEditorModal.ts"
+import type { MetadataSelectorModalCtx } from "../metadataSelectorModal.ts"
+import type { ActionsModalCtx } from "../actionsModal.ts"
 
 // Five modal contexts are pure rename adapters from App's local handler names
 // to the keymap's expected method names. They live inline here rather than in
@@ -48,18 +55,25 @@ export interface BuildOpenRepositoryModalCtxInput {
 
 export interface BuildAppCtxFlags {
 	readonly closeModalActive: boolean
+	readonly itemEditorModalActive: boolean
+	readonly metadataSelectorModalActive: boolean
 	readonly pullRequestStateModalActive: boolean
 	readonly mergeModalActive: boolean
 	readonly commentThreadModalActive: boolean
 	readonly changedFilesModalActive: boolean
+	readonly bulkEditorModalActive: boolean
 	readonly filterModalActive: boolean
 	readonly submitReviewModalActive: boolean
+	readonly pendingReviewModalActive: boolean
 	readonly labelModalActive: boolean
 	readonly themeModalActive: boolean
 	readonly openRepositoryModalActive: boolean
 	readonly commentModalActive: boolean
 	readonly deleteCommentModalActive: boolean
 	readonly commandPaletteActive: boolean
+	readonly releaseEditorModalActive: boolean
+	readonly deleteReleaseModalActive: boolean
+	readonly actionsModalActive: boolean
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
 	readonly runsFullView: boolean
@@ -71,18 +85,25 @@ export interface BuildAppCtxFlags {
 export interface BuildAppCtxInput {
 	readonly flags: BuildAppCtxFlags
 	readonly closeModal: BuildCloseModalCtxInput
+	readonly itemEditorModal: ItemEditorModalCtx
+	readonly metadataSelectorModal: MetadataSelectorModalCtx
 	readonly pullRequestStateModal: BuildPullRequestStateModalCtxInput
 	readonly mergeModal: BuildMergeModalCtxInput
 	readonly commentThreadModal: BuildCommentThreadModalCtxInput
 	readonly changedFilesModal: BuildChangedFilesModalCtxInput
+	readonly bulkEditorModal: BulkEditorModalCtx
 	readonly filterModal: BuildFilterModalCtxInput
 	readonly submitReviewModal: BuildSubmitReviewModalCtxInput
+	readonly pendingReviewModal: BuildPendingReviewModalCtxInput
 	readonly labelModal: BuildLabelModalCtxInput
 	readonly themeModal: BuildThemeModalCtxInput
 	readonly openRepositoryModal: BuildOpenRepositoryModalCtxInput
 	readonly commentModal: BuildCommentModalCtxInput
 	readonly deleteCommentModal: BuildDeleteCommentModalCtxInput
 	readonly commandPalette: BuildCommandPaletteCtxInput
+	readonly releaseEditorModal: ReleaseEditorModalCtx
+	readonly deleteReleaseModal: DeleteReleaseModalCtx
+	readonly actionsModal: ActionsModalCtx
 	readonly filterModeCtx: BuildFilterModeCtxInput
 	readonly diff: BuildDiffViewCtxInput
 	readonly runs: RunsViewCtx
@@ -96,16 +117,20 @@ export interface BuildAppCtxInput {
 export const buildAppCtx = (input: BuildAppCtxInput): AppCtx => ({
 	...input.flags,
 	closeModal: { closeModal: input.closeModal.closeActiveModal, confirmClose: input.closeModal.confirmCloseModal },
+	itemEditorModal: input.itemEditorModal,
+	metadataSelectorModal: input.metadataSelectorModal,
 	pullRequestStateModal: buildPullRequestStateModalCtx(input.pullRequestStateModal),
 	mergeModal: buildMergeModalCtx(input.mergeModal),
 	commentThreadModal: buildCommentThreadModalCtx(input.commentThreadModal),
 	changedFilesModal: buildChangedFilesModalCtx(input.changedFilesModal),
+	bulkEditorModal: input.bulkEditorModal,
 	filterModal: {
 		closeModal: input.filterModal.closeActiveModal,
 		applySelected: input.filterModal.applySelected,
 		moveSelection: input.filterModal.moveSelection,
 	},
 	submitReviewModal: buildSubmitReviewModalCtx(input.submitReviewModal),
+	pendingReviewModal: buildPendingReviewModalCtx(input.pendingReviewModal),
 	labelModal: {
 		closeModal: input.labelModal.closeActiveModal,
 		toggleSelected: input.labelModal.toggleLabelAtIndex,
@@ -116,6 +141,9 @@ export const buildAppCtx = (input: BuildAppCtxInput): AppCtx => ({
 	commentModal: buildCommentModalCtx(input.commentModal),
 	deleteCommentModal: { closeModal: input.deleteCommentModal.closeActiveModal, confirmDelete: input.deleteCommentModal.confirmDeleteComment },
 	commandPalette: buildCommandPaletteCtx(input.commandPalette),
+	releaseEditorModal: input.releaseEditorModal,
+	deleteReleaseModal: input.deleteReleaseModal,
+	actionsModal: input.actionsModal,
 	filterModeCtx: buildFilterModeCtx(input.filterModeCtx),
 	diff: buildDiffViewCtx(input.diff),
 	runs: input.runs,

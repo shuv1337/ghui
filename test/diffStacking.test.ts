@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
 	buildStackedDiffFiles,
+	stackedDiffSectionHeight,
+	windowedStackedDiffFileIndexes,
 	diffAnchorOnSide,
 	getDiffCommentAnchors,
 	getStackedDiffCommentAnchors,
@@ -38,6 +40,31 @@ describe("stacked diff helpers", () => {
 		expect(stacked).toHaveLength(2)
 		expect(stacked[0]).toMatchObject({ index: 0, headerLine: 0, diffStartLine: 2, diffHeight: firstHeight })
 		expect(stacked[1]).toMatchObject({ index: 1, headerLine: firstHeight + 3, diffStartLine: firstHeight + 5 })
+	})
+
+	test("windows large file stacks without changing their measured geometry", () => {
+		const files = Array.from({ length: 100 }, (_, index) => ({
+			name: `src/file-${index}.ts`,
+			filetype: "typescript",
+			patch: `diff --git a/src/file-${index}.ts b/src/file-${index}.ts\n--- a/src/file-${index}.ts\n+++ b/src/file-${index}.ts\n@@ -1 +1 @@\n-old\n+new`,
+		}))
+		const stacked = buildStackedDiffFiles(files, "unified", "none", 120)
+		const mounted = windowedStackedDiffFileIndexes(stacked, stacked[50]!.headerLine, 20)
+		expect(mounted.size).toBeLessThan(20)
+		expect(mounted.has(50)).toBe(true)
+		expect(mounted.has(0)).toBe(false)
+		expect(stacked.reduce((sum, file) => sum + stackedDiffSectionHeight(file), 0)).toBe(stacked[stacked.length - 1]!.diffStartLine + stacked[stacked.length - 1]!.diffHeight)
+	})
+
+	test("keeps the selected offscreen file mounted", () => {
+		const files = Array.from({ length: 20 }, (_, index) => ({
+			name: `file-${index}.txt`,
+			filetype: "text",
+			patch: `diff --git a/file-${index}.txt b/file-${index}.txt\n--- a/file-${index}.txt\n+++ b/file-${index}.txt\n@@ -1 +1 @@\n-a\n+b`,
+		}))
+		const stacked = buildStackedDiffFiles(files, "unified", "none", 80)
+		const mounted = windowedStackedDiffFileIndexes(stacked, 0, 10, 19)
+		expect(mounted.has(19)).toBe(true)
 	})
 
 	test("maps local comment anchors into global stacked lines", () => {

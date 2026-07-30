@@ -29,11 +29,13 @@ We looked at hunk, which solves a similar terminal diff problem elegantly. The u
 
 ## Open Questions
 
-- Can OpenTUI `<diff>` support word-level changed-span highlighting, or do we need a custom renderer for that feature?
-- Should the first implementation replace only unified mode, or should unified and split move together to avoid duplicated behavior?
-- Does ghui need true hunk-level row modeling immediately, or is file-level windowing enough before custom highlighting lands?
-- Which parser/highlighter stack should provide the semantic row model, syntax tokens, and word-diff spans?
-- How should comment-thread preview and click-to-comment selection behave when the selected anchor belongs to an offscreen placeholder file?
+All original questions are resolved:
+
+- **Renderer:** OpenTUI's `<diff>` already exposes Tree-sitter syntax styling and distinct `addedContentBg` / `removedContentBg` word-change spans, so ghui keeps that renderer.
+- **Unified versus split:** both continue to share one measured file/anchor model.
+- **Windowing granularity:** file-level windowing is sufficient for the first parity release; a one-viewport halo mounts nearby sections while exact-height placeholders preserve global geometry.
+- **Offscreen comment selection:** the selected comment's file is always force-mounted, so keyboard jumps are deterministic.
+- **Parser ownership:** parser clients remain OpenTUI-owned; ghui validates repeated create/destroy lifecycle separately and does not retain parser buffers.
 
 ## Out Of Scope (For V1)
 
@@ -44,4 +46,4 @@ We looked at hunk, which solves a similar terminal diff problem elegantly. The u
 
 ## Status
 
-Not started. Prior-art exploration complete; implementation should start with the semantic row model and file-section geometry, then use that foundation for viewport windowing and syntax-plus-word-diff highlighting.
+Implemented in M3. `src/ui/diff.ts` is the semantic geometry contract for files, render heights, sides, line numbers, and anchors. `PullRequestDiffPane` mounts only the viewport halo plus the selected file, uses exact-height placeholders, retains sticky headers, and supplies Tree-sitter syntax styles plus OpenTUI intra-line content colors in unified and split modes. `bun run benchmark:diff` guards the 500-file model/window budget, and `bun run test:diff-highlighter-lifecycle` verifies repeatable parser/style teardown without warnings.

@@ -1,5 +1,16 @@
 import { Data } from "effect"
-import type { DiffCommentSide, PullRequestLabel, PullRequestMergeInfo, PullRequestMergeKind, PullRequestMergeMethod, RepositoryMergeMethods } from "../../domain.js"
+import type {
+	ActionArtifact,
+	BranchItem,
+	DiffCommentSide,
+	PullRequestLabel,
+	PullRequestMergeInfo,
+	PullRequestMergeKind,
+	PullRequestMergeMethod,
+	RepositoryMergeMethods,
+	Workflow,
+	WorkflowInput,
+} from "../../domain.js"
 import type { ThemeConfig, ThemeMode } from "../../themeConfig.js"
 import type { ThemeId, ThemeTone } from "../colors.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
@@ -34,11 +45,82 @@ export interface MergeModalState {
 
 export interface CloseModalState {
 	readonly kind: "pullRequest" | "issue"
+	readonly action: "close" | "delete"
 	readonly repository: string | null
 	readonly number: number | null
 	readonly title: string
 	readonly url: string | null
 	readonly running: boolean
+	readonly error: string | null
+}
+
+export type ItemEditorField = "title" | "body" | "base" | "head" | "draft" | "labels" | "assignees" | "reviewers" | "milestone"
+
+export interface ItemEditorModalState {
+	readonly kind: "pullRequest" | "issue"
+	readonly mode: "create" | "edit"
+	readonly repository: string
+	readonly number: number | null
+	readonly url: string | null
+	readonly title: string
+	readonly body: string
+	readonly base: string
+	readonly head: string
+	readonly draft: boolean
+	readonly labels: string
+	readonly assignees: string
+	readonly reviewers: string
+	readonly milestone: string
+	readonly focus: ItemEditorField
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface MetadataSelectorOption {
+	readonly id: string
+	readonly label: string
+	readonly description: string
+}
+
+export interface MetadataSelectorModalState {
+	readonly kind: "assignees" | "reviewers" | "milestone" | "base"
+	readonly target: {
+		readonly kind: "issue" | "pullRequest"
+		readonly repository: string
+		readonly number: number
+		readonly url: string
+	}
+	readonly query: string
+	readonly selectedIndex: number
+	readonly selectedIds: readonly string[]
+	readonly options: readonly MetadataSelectorOption[]
+	readonly loading: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export const bulkItemActions = ["addLabel", "removeLabel", "addAssignee", "removeAssignee", "milestone", "close", "reopen"] as const
+export type BulkItemAction = (typeof bulkItemActions)[number]
+
+export interface BulkItemTarget {
+	readonly kind: "issue" | "pullRequest"
+	readonly repository: string
+	readonly number: number
+	readonly url: string
+	readonly title: string
+	readonly state: "open" | "closed" | "merged"
+}
+
+export interface BulkEditorModalState {
+	readonly targets: readonly BulkItemTarget[]
+	readonly action: BulkItemAction
+	readonly value: string
+	readonly focus: "action" | "value"
+	readonly running: boolean
+	readonly confirming: boolean
+	readonly cancelRequested: boolean
+	readonly summary: string | null
+	readonly resultLines: readonly string[]
 	readonly error: string | null
 }
 
@@ -83,6 +165,8 @@ export interface CommentModalState {
 	readonly body: string
 	readonly cursor: number
 	readonly error: string | null
+	readonly submitMode: "post" | "queue"
+	readonly contentKind: "comment" | "suggestion"
 	readonly target: CommentModalTarget
 }
 
@@ -121,6 +205,48 @@ export interface SubmitReviewModalState {
 	readonly error: string | null
 }
 
+export interface PendingReviewModalState {
+	readonly selectedIndex: number
+	readonly confirmingDiscard: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface RunActionModalState {
+	readonly action: "retry" | "cancel"
+	readonly repository: string
+	readonly runId: number
+	readonly title: string
+	readonly failedOnly: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface WorkflowDispatchModalState {
+	readonly repository: string
+	readonly workflows: readonly Workflow[]
+	readonly workflowIndex: number
+	readonly inputs: readonly WorkflowInput[]
+	readonly values: Readonly<Record<string, string | boolean>>
+	readonly ref: string
+	readonly focusIndex: number
+	readonly loadingInputs: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface ArtifactDownloadModalState {
+	readonly repository: string
+	readonly runId: number
+	readonly artifacts: readonly ActionArtifact[]
+	readonly selectedIndex: number
+	readonly destination: string
+	readonly focus: "artifact" | "destination"
+	readonly loading: boolean
+	readonly running: boolean
+	readonly error: string | null
+}
+
 export interface ThemeModalState {
 	readonly query: string
 	readonly filterMode: boolean
@@ -139,6 +265,73 @@ export interface CommandPaletteState {
 
 export interface OpenRepositoryModalState {
 	readonly query: string
+	readonly error: string | null
+}
+
+export type ReleaseEditorField = "tagName" | "name" | "body" | "targetCommitish" | "isDraft" | "isPrerelease"
+
+export interface ReleaseEditorModalState {
+	readonly mode: "create" | "edit"
+	readonly repository: string
+	readonly originalTagName: string | null
+	readonly tagName: string
+	readonly name: string
+	readonly body: string
+	readonly targetCommitish: string
+	readonly isDraft: boolean
+	readonly isPrerelease: boolean
+	readonly focus: ReleaseEditorField
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface DeleteReleaseModalState {
+	readonly repository: string
+	readonly tagName: string
+	readonly name: string
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export type BranchResourceEditorField = "name" | "source"
+export type MilestoneResourceEditorField = "title" | "description" | "dueOn" | "state"
+export type ResourceEditorField = BranchResourceEditorField | MilestoneResourceEditorField
+
+interface ResourceEditorModalBase {
+	readonly mode: "create" | "edit"
+	readonly repository: string
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface BranchResourceEditorModalState extends ResourceEditorModalBase {
+	readonly kind: "branch"
+	readonly branchName: string
+	readonly sourceIndex: number
+	readonly sourceBranches: readonly BranchItem[]
+	readonly focus: BranchResourceEditorField
+}
+
+export interface MilestoneResourceEditorModalState extends ResourceEditorModalBase {
+	readonly kind: "milestone"
+	readonly milestoneNumber: number | null
+	readonly title: string
+	readonly description: string
+	readonly dueOn: string
+	readonly state: "open" | "closed"
+	readonly focus: MilestoneResourceEditorField
+}
+
+export type ResourceEditorModalState = BranchResourceEditorModalState | MilestoneResourceEditorModalState
+
+export interface DeleteResourceModalState {
+	readonly kind: "branch" | "milestone"
+	readonly repository: string
+	readonly title: string
+	readonly branch: BranchItem | null
+	readonly milestoneNumber: number | null
+	readonly selectedBranchName: string | null
+	readonly running: boolean
 	readonly error: string | null
 }
 
@@ -166,11 +359,57 @@ export const initialMergeModalState: MergeModalState = {
 
 export const initialCloseModalState: CloseModalState = {
 	kind: "pullRequest",
+	action: "close",
 	repository: null,
 	number: null,
 	title: "",
 	url: null,
 	running: false,
+	error: null,
+}
+
+export const initialItemEditorModalState: ItemEditorModalState = {
+	kind: "issue",
+	mode: "create",
+	repository: "",
+	number: null,
+	url: null,
+	title: "",
+	body: "",
+	base: "main",
+	head: "",
+	draft: false,
+	labels: "",
+	assignees: "",
+	reviewers: "",
+	milestone: "",
+	focus: "title",
+	running: false,
+	error: null,
+}
+
+export const initialMetadataSelectorModalState: MetadataSelectorModalState = {
+	kind: "assignees",
+	target: { kind: "issue", repository: "", number: 0, url: "" },
+	query: "",
+	selectedIndex: 0,
+	selectedIds: [],
+	options: [],
+	loading: false,
+	running: false,
+	error: null,
+}
+
+export const initialBulkEditorModalState: BulkEditorModalState = {
+	targets: [],
+	action: "addLabel",
+	value: "",
+	focus: "action",
+	running: false,
+	confirming: false,
+	cancelRequested: false,
+	summary: null,
+	resultLines: [],
 	error: null,
 }
 
@@ -189,6 +428,8 @@ export const initialCommentModalState: CommentModalState = {
 	body: "",
 	cursor: 0,
 	error: null,
+	submitMode: "post",
+	contentKind: "comment",
 	target: { kind: "diff" },
 }
 
@@ -227,6 +468,48 @@ export const initialSubmitReviewModalState: SubmitReviewModalState = {
 	error: null,
 }
 
+export const initialPendingReviewModalState: PendingReviewModalState = {
+	selectedIndex: 0,
+	confirmingDiscard: false,
+	running: false,
+	error: null,
+}
+
+export const initialRunActionModalState: RunActionModalState = {
+	action: "retry",
+	repository: "",
+	runId: 0,
+	title: "",
+	failedOnly: false,
+	running: false,
+	error: null,
+}
+
+export const initialWorkflowDispatchModalState: WorkflowDispatchModalState = {
+	repository: "",
+	workflows: [],
+	workflowIndex: 0,
+	inputs: [],
+	values: {},
+	ref: "main",
+	focusIndex: 0,
+	loadingInputs: false,
+	running: false,
+	error: null,
+}
+
+export const initialArtifactDownloadModalState: ArtifactDownloadModalState = {
+	repository: "",
+	runId: 0,
+	artifacts: [],
+	selectedIndex: 0,
+	destination: "",
+	focus: "artifact",
+	loading: false,
+	running: false,
+	error: null,
+}
+
 export const initialThemeModalState: ThemeModalState = {
 	query: "",
 	filterMode: false,
@@ -248,10 +531,59 @@ export const initialOpenRepositoryModalState: OpenRepositoryModalState = {
 	error: null,
 }
 
+export const initialReleaseEditorModalState: ReleaseEditorModalState = {
+	mode: "create",
+	repository: "",
+	originalTagName: null,
+	tagName: "",
+	name: "",
+	body: "",
+	targetCommitish: "",
+	isDraft: false,
+	isPrerelease: false,
+	focus: "tagName",
+	running: false,
+	error: null,
+}
+
+export const initialDeleteReleaseModalState: DeleteReleaseModalState = {
+	repository: "",
+	tagName: "",
+	name: "",
+	running: false,
+	error: null,
+}
+
+export const initialResourceEditorModalState: ResourceEditorModalState = {
+	kind: "branch",
+	mode: "create",
+	repository: "",
+	branchName: "",
+	sourceIndex: 0,
+	sourceBranches: [],
+	focus: "name",
+	running: false,
+	error: null,
+}
+
+export const initialDeleteResourceModalState: DeleteResourceModalState = {
+	kind: "branch",
+	repository: "",
+	title: "",
+	branch: null,
+	milestoneNumber: null,
+	selectedBranchName: null,
+	running: false,
+	error: null,
+}
+
 export type Modal = Data.TaggedEnum<{
 	None: {}
 	Label: LabelModalState
 	Close: CloseModalState
+	ItemEditor: ItemEditorModalState
+	MetadataSelector: MetadataSelectorModalState
+	BulkEditor: BulkEditorModalState
 	PullRequestState: PullRequestStateModalState
 	Merge: MergeModalState
 	Comment: CommentModalState
@@ -260,20 +592,31 @@ export type Modal = Data.TaggedEnum<{
 	ChangedFiles: ChangedFilesModalState
 	Filter: FilterModalState
 	SubmitReview: SubmitReviewModalState
+	PendingReview: PendingReviewModalState
+	RunAction: RunActionModalState
+	WorkflowDispatch: WorkflowDispatchModalState
+	ArtifactDownload: ArtifactDownloadModalState
 	Theme: ThemeModalState
 	CommandPalette: CommandPaletteState
 	OpenRepository: OpenRepositoryModalState
+	ReleaseEditor: ReleaseEditorModalState
+	DeleteRelease: DeleteReleaseModalState
+	ResourceEditor: ResourceEditorModalState
+	DeleteResource: DeleteResourceModalState
 }>
 
 export const Modal = Data.taggedEnum<Modal>()
 export const initialModal: Modal = Modal.None()
 
 export type ModalTag = Modal["_tag"]
-export type ModalState<Tag extends Exclude<ModalTag, "None">> = Omit<Extract<Modal, { _tag: Tag }>, "_tag">
+export type ModalState<Tag extends Exclude<ModalTag, "None">> = Tag extends "ResourceEditor" ? ResourceEditorModalState : Omit<Extract<Modal, { _tag: Tag }>, "_tag">
 
 export const modalInitialStates = {
 	Label: initialLabelModalState,
 	Close: initialCloseModalState,
+	ItemEditor: initialItemEditorModalState,
+	MetadataSelector: initialMetadataSelectorModalState,
+	BulkEditor: initialBulkEditorModalState,
 	PullRequestState: initialPullRequestStateModalState,
 	Merge: initialMergeModalState,
 	Comment: initialCommentModalState,
@@ -282,7 +625,15 @@ export const modalInitialStates = {
 	ChangedFiles: initialChangedFilesModalState,
 	Filter: initialFilterModalState,
 	SubmitReview: initialSubmitReviewModalState,
+	PendingReview: initialPendingReviewModalState,
+	RunAction: initialRunActionModalState,
+	WorkflowDispatch: initialWorkflowDispatchModalState,
+	ArtifactDownload: initialArtifactDownloadModalState,
 	Theme: initialThemeModalState,
 	CommandPalette: initialCommandPaletteState,
 	OpenRepository: initialOpenRepositoryModalState,
+	ReleaseEditor: initialReleaseEditorModalState,
+	DeleteRelease: initialDeleteReleaseModalState,
+	ResourceEditor: initialResourceEditorModalState,
+	DeleteResource: initialDeleteResourceModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }

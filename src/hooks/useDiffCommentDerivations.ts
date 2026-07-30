@@ -33,6 +33,7 @@ export interface UseDiffCommentDerivationsInput {
 	readonly diffCommentRangeStartIndex: number | null
 	readonly selectedDiffKey: string | null
 	readonly diffCommentThreads: Record<string, readonly PullRequestReviewComment[]>
+	readonly pendingReviewComments: readonly PullRequestReviewComment[]
 }
 
 export interface DiffCommentDerivations {
@@ -49,6 +50,7 @@ export interface DiffCommentDerivations {
 	readonly selectedDiffCommentThread: readonly PullRequestReviewComment[]
 	readonly diffLineColorContextKey: string | null
 	readonly diffCommentThreadAnchors: readonly StackedDiffCommentAnchor[]
+	readonly pendingReviewAnchors: readonly StackedDiffCommentAnchor[]
 }
 
 export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput): DiffCommentDerivations => {
@@ -64,6 +66,7 @@ export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput)
 		diffCommentRangeStartIndex,
 		selectedDiffKey,
 		diffCommentThreads,
+		pendingReviewComments,
 	} = input
 
 	const displayedDiffState = useMemo(
@@ -111,6 +114,16 @@ export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput)
 			return true
 		})
 	}, [diffCommentAnchors, diffCommentThreads, selectedDiffKey])
+	const pendingReviewAnchors = useMemo(() => {
+		const pendingLocations = new Set(pendingReviewComments.map(diffCommentLocationKey))
+		const seen = new Set<string>()
+		return diffCommentAnchors.filter((anchor) => {
+			const key = diffCommentLocationKey(anchor)
+			if (!pendingLocations.has(key) || seen.has(key)) return false
+			seen.add(key)
+			return true
+		})
+	}, [diffCommentAnchors, pendingReviewComments])
 
 	return {
 		displayedDiffState,
@@ -126,5 +139,6 @@ export const useDiffCommentDerivations = (input: UseDiffCommentDerivationsInput)
 		selectedDiffCommentThread,
 		diffLineColorContextKey,
 		diffCommentThreadAnchors,
+		pendingReviewAnchors,
 	}
 }

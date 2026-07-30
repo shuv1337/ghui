@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
-import type { IssueItem, PullRequestItem, RepositoryDetails } from "../src/domain.ts"
+import type { IssueItem, NotificationItem, PullRequestItem, ReleaseItem, RepositoryDetails, WorkflowRunDetails } from "../src/domain.ts"
 import type { IssueLoad } from "../src/issueLoad.ts"
 import type { IssueView } from "../src/issueViews.ts"
 import type { PullRequestLoad } from "../src/pullRequestLoad.ts"
@@ -60,6 +60,59 @@ const load = (data: readonly PullRequestItem[]): PullRequestLoad => ({
 	fetchedAt: new Date(),
 	endCursor: "cursor-1",
 	hasNextPage: true,
+})
+
+const release = (tagName: string, overrides: Partial<ReleaseItem> = {}): ReleaseItem => ({
+	repository: "owner/repo",
+	tagName,
+	name: `Release ${tagName}`,
+	body: `Notes for ${tagName}`,
+	isDraft: false,
+	isPrerelease: false,
+	author: "alice",
+	targetCommitish: "main",
+	createdAt: new Date("2026-05-01T00:00:00Z"),
+	publishedAt: new Date("2026-05-02T00:00:00Z"),
+	url: `https://github.com/owner/repo/releases/tag/${tagName}`,
+	...overrides,
+})
+
+const actionRun = (id: number): WorkflowRunDetails => ({
+	id,
+	number: 12,
+	attempt: 2,
+	workflowName: "CI",
+	displayTitle: "Cache Actions",
+	event: "push",
+	headBranch: "main",
+	headSha: "abc123",
+	status: "completed",
+	conclusion: "success",
+	url: `https://github.com/owner/repo/actions/runs/${id}`,
+	createdAt: new Date("2026-06-01T00:00:00Z"),
+	startedAt: null,
+	updatedAt: new Date("2026-06-01T00:02:00Z"),
+	jobs: [
+		{
+			id: id * 10,
+			name: "test (node 22)",
+			status: "completed",
+			conclusion: "success",
+			startedAt: null,
+			completedAt: new Date("2026-06-01T00:02:00Z"),
+			url: `https://github.com/owner/repo/actions/runs/${id}/job/${id * 10}`,
+			steps: [
+				{
+					number: 1,
+					name: "Skipped setup",
+					status: "completed",
+					conclusion: "skipped",
+					startedAt: null,
+					completedAt: null,
+				},
+			],
+		},
+	],
 })
 
 const runCache = async <A, E>(filename: string, effect: Effect.Effect<A, E, CacheService>) => Effect.runPromise(effect.pipe(Effect.provide(CacheService.layerSqliteFile(filename))))
@@ -430,6 +483,304 @@ describe("CacheService", () => {
 
 		expect(fetchedAt).toBeInstanceOf(Date)
 		expect(fetchedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime() - 1000)
+	})
+
+	test("persists release order, empty snapshots, and revived dates", async () => {
+		const filename = await tempCachePath()
+		const fetchedAt = new Date("2026-05-03T00:00:00Z")
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeReleaseList({ repository: "owner/repo", data: [release("v2"), release("v1")], fetchedAt })
+			}),
+		)
+
+		const populated = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* cache.readReleaseList("owner/repo")
+			}),
+		)
+		expect(populated?.data.map((item) => item.tagName)).toEqual(["v2", "v1"])
+		expect(populated?.data[0]!.createdAt).toBeInstanceOf(Date)
+		expect(populated?.fetchedAt.toISOString()).toBe(fetchedAt.toISOString())
+
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeReleaseList({ repository: "owner/empty", data: [], fetchedAt })
+			}),
+		)
+		const empty = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* cache.readReleaseList("owner/empty")
+			}),
+		)
+		expect(empty).toEqual({ repository: "owner/empty", data: [], fetchedAt })
+	})
+
+	test("skips corrupt release rows and invalidates list snapshots after mutations", async () => {
+		const filename = await tempCachePath()
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeReleaseList({ repository: "owner/repo", data: [release("v2"), release("v1")], fetchedAt: new Date() })
+			}),
+		)
+		const db = new Database(filename)
+		db.run("update releases set data_json = ? where release_key = ?", "{", "owner/repo#v2")
+		db.close()
+
+		const surviving = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* cache.readReleaseList("owner/repo")
+			}),
+		)
+		expect(surviving?.data.map((item) => item.tagName)).toEqual(["v1"])
+
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.upsertRelease(release("v3"))
+			}),
+		)
+		expect(
+			await runCache(
+				filename,
+				Effect.gen(function* () {
+					const cache = yield* CacheService
+					return yield* cache.readReleaseList("owner/repo")
+				}),
+			),
+		).toBeNull()
+	})
+
+	test("persists Action summaries and details, revives nullable dates, and invalidates authoritatively", async () => {
+		const filename = await tempCachePath()
+		const details = actionRun(77)
+		const { jobs: _jobs, ...summary } = details
+		const fetchedAt = new Date("2026-06-01T00:03:00Z")
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeActionRuns({ repository: "owner/repo", data: [summary], fetchedAt })
+				yield* cache.writeActionRunDetails("owner/repo", details)
+			}),
+		)
+
+		const [runs, runDetails] = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* Effect.all([cache.readActionRuns("owner/repo"), cache.readActionRunDetails("owner/repo", 77)])
+			}),
+		)
+		expect(runs?.data[0]?.createdAt).toBeInstanceOf(Date)
+		expect(runs?.data[0]?.startedAt).toBeNull()
+		expect(runs?.fetchedAt.toISOString()).toBe(fetchedAt.toISOString())
+		expect(runDetails?.jobs[0]?.name).toBe("test (node 22)")
+		expect(runDetails?.jobs[0]?.startedAt).toBeNull()
+		expect(runDetails?.jobs[0]?.steps[0]?.conclusion).toBe("skipped")
+
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.invalidateActionRuns("owner/repo", 77)
+			}),
+		)
+		const [invalidRuns, invalidDetails] = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* Effect.all([cache.readActionRuns("owner/repo"), cache.readActionRunDetails("owner/repo", 77)])
+			}),
+		)
+		expect(invalidRuns).toBeNull()
+		expect(invalidDetails).toBeNull()
+	})
+
+	test("treats corrupt Action cache rows as cache misses", async () => {
+		const filename = await tempCachePath()
+		const details = actionRun(88)
+		const { jobs: _jobs, ...summary } = details
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeActionRuns({ repository: "owner/repo", data: [summary], fetchedAt: new Date() })
+				yield* cache.writeActionRunDetails("owner/repo", details)
+			}),
+		)
+		const db = new Database(filename)
+		db.run("update action_run_snapshots set data_json = ? where repository = ?", "{", "owner/repo")
+		db.run("update action_run_details set data_json = ? where run_key = ?", "{", "owner/repo#88")
+		db.close()
+		const [runs, runDetails] = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* Effect.all([cache.readActionRuns("owner/repo"), cache.readActionRunDetails("owner/repo", 88)])
+			}),
+		)
+		expect(runs).toBeNull()
+		expect(runDetails).toBeNull()
+	})
+
+	test("persists repository resources across reopen and treats corrupt rows as cache misses", async () => {
+		const filename = await tempCachePath()
+		const fetchedAt = new Date("2026-07-29T10:00:00Z")
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeBranches({
+					repository: "owner/repo",
+					fetchedAt,
+					data: [{ repository: "owner/repo", name: "main", sha: "abc", protected: true, isDefault: true }],
+				})
+				yield* cache.writeMilestones({
+					repository: "owner/repo",
+					fetchedAt,
+					data: [
+						{
+							repository: "owner/repo",
+							number: 1,
+							title: "Parity",
+							description: "",
+							state: "open",
+							openIssues: 2,
+							closedIssues: 3,
+							dueOn: new Date("2026-09-01T23:59:59Z"),
+							url: "https://github.com/owner/repo/milestone/1",
+						},
+					],
+				})
+				const deployment = {
+					repository: "owner/repo",
+					id: 9,
+					environment: "production",
+					ref: "main",
+					sha: "abc",
+					task: "deploy",
+					state: "success" as const,
+					description: "",
+					createdAt: new Date("2026-07-01T10:00:00Z"),
+					updatedAt: new Date("2026-07-01T10:05:00Z"),
+					url: "https://prod.example",
+				}
+				yield* cache.writeEnvironments({
+					repository: "owner/repo",
+					fetchedAt,
+					data: [
+						{
+							repository: "owner/repo",
+							id: 1,
+							name: "production",
+							url: "https://github.com/owner/repo/deployments/production",
+							protectionRules: 1,
+							latestDeployment: deployment,
+						},
+					],
+				})
+				yield* cache.writeDeployments("production", { repository: "owner/repo", fetchedAt, data: [deployment] })
+				yield* cache.writeRunners({
+					repository: "owner/repo",
+					fetchedAt,
+					data: [
+						{
+							repository: "owner/repo",
+							id: 1,
+							name: "gpu",
+							os: "linux",
+							status: "online",
+							busy: true,
+							labels: [{ name: "gpu", type: "custom" }],
+						},
+					],
+				})
+			}),
+		)
+
+		const [branches, milestones, environments, deployments, runners] = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* Effect.all([
+					cache.readBranches("owner/repo"),
+					cache.readMilestones("owner/repo"),
+					cache.readEnvironments("owner/repo"),
+					cache.readDeployments("owner/repo", "production"),
+					cache.readRunners("owner/repo"),
+				])
+			}),
+		)
+		expect(branches?.data[0]?.isDefault).toBe(true)
+		expect(milestones?.data[0]?.dueOn).toBeInstanceOf(Date)
+		expect(environments?.data[0]?.latestDeployment?.createdAt).toBeInstanceOf(Date)
+		expect(deployments?.data[0]?.updatedAt).toBeInstanceOf(Date)
+		expect(runners?.data[0]?.labels[0]?.type).toBe("custom")
+
+		const db = new Database(filename)
+		db.run("update repository_resource_snapshots set data_json = ? where repository = ? and resource = ?", "{", "owner/repo", "runners")
+		db.close()
+		const corrupt = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* cache.readRunners("owner/repo")
+			}),
+		)
+		expect(corrupt).toBeNull()
+	})
+
+	test("caches short notification summaries without private subjects", async () => {
+		const filename = await tempCachePath()
+		const notification: NotificationItem = {
+			id: "thread-1",
+			unread: true,
+			reason: "mention",
+			subjectType: "issue",
+			subject: "private incident title",
+			repository: "owner/private",
+			updatedAt: new Date("2026-07-29T10:00:00Z"),
+			lastReadAt: null,
+			url: "https://github.com/owner/private/issues/1",
+		}
+		await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				yield* cache.writeNotificationSummaries("octocat", false, {
+					repository: "octocat",
+					data: [notification],
+					fetchedAt: new Date("2026-07-29T10:01:00Z"),
+				})
+			}),
+		)
+		const db = new Database(filename)
+		const row = db.query<{ data_json: string }, []>("select data_json from repository_resource_snapshots where repository = 'octocat' and resource = 'notifications:unread'").get()
+		db.close()
+		expect(row?.data_json).not.toContain(notification.subject)
+		expect(row?.data_json).not.toContain('"subject"')
+		const cached = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				return yield* cache.readNotificationSummaries("octocat", false)
+			}),
+		)
+		expect(cached?.data[0]).toMatchObject({ id: "thread-1", updatedAt: new Date("2026-07-29T10:00:00Z") })
 	})
 
 	test("layerFromPath falls back to disabled cache when startup fails", async () => {

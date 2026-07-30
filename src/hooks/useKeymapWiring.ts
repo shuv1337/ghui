@@ -1,10 +1,13 @@
 import { useKeymap } from "@ghui/keymap/react"
 import type { KeySubscribe } from "@ghui/keymap/react"
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { appKeymap } from "../keymap/all.js"
 import { buildAppCtx, type BuildAppCtxInput } from "../keymap/contexts/appCtx.js"
 import { useOpenTuiSubscribe } from "../keyboard/opentuiAdapter.js"
 import { useTextInputDispatcher, type UseTextInputDispatcherInput } from "../ui/useTextInputDispatcher.js"
+import { readStoredConfig, subscribeStoredConfig } from "../configStore.js"
+import { applyKeybindingOverrides } from "../settings/keybindings.js"
+import { devLog } from "../devLog.js"
 
 export interface UseKeymapWiringInput {
 	readonly disabled: boolean
@@ -21,7 +24,27 @@ export interface UseKeymapWiringInput {
  */
 export const useKeymapWiring = ({ disabled, ctxInput, textInput }: UseKeymapWiringInput): void => {
 	const subscribe = useOpenTuiSubscribe()
+	const [keybindingOverrides, setKeybindingOverrides] = useState<Readonly<Record<string, readonly string[]>>>({})
+	useEffect(() => {
+		let active = true
+		void readStoredConfig().then(
+			(result) => {
+				if (active) setKeybindingOverrides(result.config.keybindings)
+			},
+			(cause) => devLog("useKeymapWiring:configReadFailed", { cause: String(cause) }),
+		)
+		const unsubscribe = subscribeStoredConfig((result) => setKeybindingOverrides(result.config.keybindings))
+		return () => {
+			active = false
+			unsubscribe()
+		}
+	}, [])
+	const configuredKeymap = useMemo(() => {
+		const configured = applyKeybindingOverrides(appKeymap, keybindingOverrides)
+		if (configured.diagnostics.length > 0) devLog("useKeymapWiring:keybindingDiagnostics", { diagnostics: configured.diagnostics })
+		return configured.keymap
+	}, [keybindingOverrides])
 	const gatedSubscribe = useMemo<KeySubscribe>(() => (handler) => subscribe((stroke) => disabled || handler(stroke)), [disabled, subscribe])
-	useKeymap(appKeymap, buildAppCtx(ctxInput), gatedSubscribe)
+	useKeymap(configuredKeymap, buildAppCtx(ctxInput), gatedSubscribe)
 	useTextInputDispatcher({ ...textInput, disabled })
 }

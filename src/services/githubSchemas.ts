@@ -266,6 +266,21 @@ export const PullRequestFileSchema = Schema.Struct({
 
 export const CommentsResponseSchema = Schema.Union([Schema.Array(PullRequestCommentSchema), Schema.Array(Schema.Array(PullRequestCommentSchema))])
 
+export const PendingReviewSchema = Schema.Struct({
+	id: Schema.Union([Schema.Number, Schema.String]),
+	state: Schema.String,
+	commit_id: OptionalNullableString,
+	user: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				login: OptionalNullableString,
+			}),
+		),
+	),
+})
+
+export const PendingReviewsResponseSchema = Schema.Union([Schema.Array(PendingReviewSchema), Schema.Array(Schema.Array(PendingReviewSchema))])
+
 export const PullRequestFilesResponseSchema = Schema.Union([Schema.Array(PullRequestFileSchema), Schema.Array(Schema.Array(PullRequestFileSchema))])
 
 export const RepoLabelsResponseSchema = Schema.Array(
@@ -274,6 +289,13 @@ export const RepoLabelsResponseSchema = Schema.Array(
 		color: Schema.String,
 	}),
 )
+
+const RepositoryUserSchema = Schema.Struct({
+	login: Schema.String,
+	name: OptionalNullableString,
+})
+
+export const RepositoryUsersResponseSchema = Schema.Union([Schema.Array(RepositoryUserSchema), Schema.Array(Schema.Array(RepositoryUserSchema))])
 
 // ---------------------------------------------------------------------------
 // Derived type aliases

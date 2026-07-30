@@ -25,6 +25,7 @@ import {
 	loadMoreRowSelectedAtom,
 	loadedPullRequestCountAtom,
 	pullRequestOverridesAtom,
+	pullRequestSurfaceViewAtom,
 	pullRequestLoadMoreSlotAvailableAtom,
 	pullRequestsAtom,
 	queueLoadCacheAtom,
@@ -41,6 +42,7 @@ import { useScrollPersistence } from "../../ui/useScrollPersistence.js"
 import { AUTO_REFRESH_JITTER_MS, FOCUS_RETURN_REFRESH_MIN_MS, FOCUSED_IDLE_REFRESH_MS } from "../../workspace/placeholders.js"
 import { selectedRepositoryAtom } from "../../workspace/atoms.js"
 import type { WorkspaceSurface } from "../../workspaceSurfaces.js"
+import { useSurfaceView } from "../../settings/useSurfaceView.js"
 
 type SetState<T> = (next: T | ((prev: T) => T)) => void
 
@@ -116,6 +118,7 @@ export interface PullRequestSurfaceShell {
 	readonly resetHydration: () => void
 	// Selection helper used by link navigation + comment view jump
 	readonly selectPullRequestByUrl: (url: string) => void
+	readonly selectNewestPullRequest: () => void
 }
 
 // PR Surface shell — step 4a. Owns the PR data layer:
@@ -173,11 +176,17 @@ export const usePullRequestSurface = (input: UsePullRequestSurfaceInput): PullRe
 	const queueLoadCache = useAtomValue(queueLoadCacheAtom)
 	const setQueueLoadCache = useAtomSet(queueLoadCacheAtom)
 	const setPullRequestOverrides = useAtomSet(pullRequestOverridesAtom)
+	const setPullRequestSurfaceView = useAtomSet(pullRequestSurfaceViewAtom)
+	const { view } = useSurfaceView("pullRequests")
 	const setRecentlyCompletedPullRequests = useAtomSet(recentlyCompletedPullRequestsAtom)
 	const setPullRequestComments = useAtomSet(pullRequestCommentsAtom)
 	const setPullRequestCommentsLoaded = useAtomSet(pullRequestCommentsLoadedAtom)
 	const setNotice = useAtomSet(noticeAtom)
 	const retryProgress = useAtomValue(retryProgressAtom)
+
+	useLayoutEffect(() => {
+		setPullRequestSurfaceView(view)
+	}, [setPullRequestSurfaceView, view])
 
 	const pullRequestLoad = useMemo(() => resolveLoad(activeView, queueLoadCache, pullRequestResult), [activeView, queueLoadCache, pullRequestResult])
 	const pullRequests = useAtomValue(displayedPullRequestsAtom)
@@ -314,6 +323,7 @@ export const usePullRequestSurface = (input: UsePullRequestSurfaceInput): PullRe
 	useScrollPersistence(prListScrollRef, prListScrollPersistedRef, activeWorkspaceSurface === "pullRequests" && !detailFullView && !diffFullView && !commentsViewActive)
 
 	const selectPullRequestByUrl = (url: string) => {
+		selectedUrlRef.current = { cacheKey: currentQueueCacheKey, url }
 		const index = visiblePullRequests.findIndex((pullRequest) => pullRequest.url === url)
 		if (index >= 0) {
 			setSelectedIndex(index)
@@ -367,5 +377,10 @@ export const usePullRequestSurface = (input: UsePullRequestSurfaceInput): PullRe
 		detailHydrationState,
 		resetHydration,
 		selectPullRequestByUrl,
+		selectNewestPullRequest: () => {
+			selectedUrlRef.current = null
+			setSelectedIndex(0)
+			setQueueSelection((current) => ({ ...current, [currentQueueCacheKey]: 0 }))
+		},
 	}
 }

@@ -1,6 +1,6 @@
 import type { ScrollBoxRenderable, DiffRenderable } from "@opentui/core"
 import type { MutableRefObject } from "react"
-import type { DiffCommentSide, IssueItem, PullRequestComment, PullRequestItem, PullRequestReviewComment, RepositoryDetails } from "../domain.js"
+import type { DiffCommentSide, IssueItem, LoadStatus, PullRequestComment, PullRequestItem, PullRequestReviewComment, ReleaseItem, RepositoryDetails } from "../domain.js"
 import type { ThemeId } from "../ui/colors.js"
 import type { DetailCommentsStatus, DetailPlaceholderContent } from "../ui/DetailsPane.js"
 import type { DiffFilePatch, DiffView, DiffWhitespaceMode, DiffWrapMode, PullRequestDiffState, StackedDiffCommentAnchor, StackedDiffFilePatch } from "../ui/diff.js"
@@ -15,6 +15,14 @@ import { IssueSurface } from "./IssueSurface.js"
 import { PullRequestSurface } from "./PullRequestSurface.js"
 import type { RunsViewModel } from "../hooks/useRunsView.js"
 import { RepoSurface } from "./RepoSurface.js"
+import { ReleaseSurface } from "./ReleaseSurface.js"
+import { ActionsSurface } from "./ActionsSurface.js"
+import type { RepositoryActionsViewModel } from "../hooks/useRepositoryActionsView.js"
+import type { RepositoryResourcesModel } from "./resource/useResourceSurfaces.js"
+import { ResourceSurface } from "../ui/resource/ResourceSurface.js"
+import type { NotificationSurfaceModel } from "./notification/useNotificationSurface.js"
+import { NotificationSurface } from "../ui/notifications/NotificationSurface.js"
+import type { SurfaceViewConfig } from "../configStore.js"
 
 export interface WorkspaceContentProps {
 	readonly showScrollbars: boolean
@@ -22,15 +30,28 @@ export interface WorkspaceContentProps {
 	readonly commentsViewActive: boolean
 	readonly diffFullView: boolean
 	readonly runsView: RunsViewModel
+	readonly actionsView: RepositoryActionsViewModel
+	readonly resourcesView: RepositoryResourcesModel
+	readonly notificationsView: NotificationSurfaceModel
 	readonly detailFullView: boolean
 	readonly layout: WorkspaceLayout
 	readonly derivations: WorkspaceDerivations
 	readonly issueActiveFilterLabel: string | null
 	readonly pullRequestActiveFilterLabel: string | null
 	readonly selectedRepositoryItem: RepositoryListItem | null
+	readonly selectedRepository: string | null
 	readonly selectedRepositoryDetails: RepositoryDetails | null
 	readonly selectedIssue: IssueItem | null
 	readonly selectedPullRequest: PullRequestItem | null
+	readonly selectedItemUrls: readonly string[]
+	readonly toggleItemSelection: (url: string) => void
+	readonly releases: readonly ReleaseItem[]
+	readonly selectedRelease: ReleaseItem | null
+	readonly selectedReleaseIndex: number
+	readonly releaseStatus: LoadStatus
+	readonly releaseError: string | null
+	readonly releaseView: SurfaceViewConfig
+	readonly setSelectedReleaseIndex: (index: number) => void
 	readonly selectedComments: readonly PullRequestComment[]
 	readonly selectedCommentsStatus: DetailCommentsStatus
 	readonly selectedCommentsLoadState: CommentLoadState
@@ -50,6 +71,7 @@ export interface WorkspaceContentProps {
 	readonly selectedDiffCommentAnchor: StackedDiffCommentAnchor | null
 	readonly selectedDiffCommentLabel: string | null
 	readonly selectedDiffCommentThread: readonly PullRequestReviewComment[]
+	readonly pendingReviewCount: number
 	readonly selectDiffCommentLine: (renderLine: number, side: DiffCommentSide | null) => void
 	readonly setDiffRenderableRef: (index: number, diff: DiffRenderable | null) => void
 	readonly loadingIndicator: string
@@ -122,13 +144,94 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				narrowIssueListNeedsScroll={derivations.narrowIssueListNeedsScroll}
 				activeFilterLabel={props.issueActiveFilterLabel}
 				issueJunctions={derivations.issueJunctions}
-				issueListProps={derivations.issueListProps}
+				issueListProps={{
+					...derivations.issueListProps,
+					bulkSelectedUrls: props.selectedItemUrls,
+					onToggleIssueSelection: props.toggleItemSelection,
+				}}
 				selectedIssue={props.selectedIssue}
 				issueListScrollRef={props.scrollRefs.issueListScrollRef}
 				detailScrollRef={props.scrollRefs.detailScrollRef}
 				detailPreviewScrollRef={props.scrollRefs.detailPreviewScrollRef}
 				detailFullView={detailFullView}
 				onLinkOpen={props.openInlineLink}
+			/>
+		)
+	}
+	if (activeWorkspaceSurface === "releases" && !commentsViewActive && !diffFullView) {
+		return (
+			<ReleaseSurface
+				releases={props.releases}
+				selectedRelease={props.selectedRelease}
+				selectedReleaseIndex={props.selectedReleaseIndex}
+				status={props.releaseStatus}
+				error={props.releaseError}
+				visibleColumns={props.releaseView.visibleColumns ?? []}
+				isWideLayout={layout.isWideLayout}
+				detailFullView={detailFullView}
+				wideBodyHeight={layout.wideBodyHeight}
+				contentWidth={layout.contentWidth}
+				leftPaneWidth={layout.leftPaneWidth}
+				rightPaneWidth={layout.rightPaneWidth}
+				setSelectedReleaseIndex={props.setSelectedReleaseIndex}
+			/>
+		)
+	}
+	if (activeWorkspaceSurface === "actions" && props.selectedRepository) {
+		return (
+			<ActionsSurface
+				repository={props.selectedRepository}
+				view={props.actionsView}
+				contentWidth={layout.fullscreenContentWidth}
+				height={layout.wideBodyHeight}
+				loadingIndicator={props.loadingIndicator}
+				showScrollbar={props.showScrollbars}
+			/>
+		)
+	}
+	if (
+		(activeWorkspaceSurface === "branches" || activeWorkspaceSurface === "milestones" || activeWorkspaceSurface === "environments" || activeWorkspaceSurface === "runners") &&
+		props.resourcesView.active
+	) {
+		return (
+			<ResourceSurface
+				surface={props.resourcesView.active.surface}
+				items={props.resourcesView.active.items}
+				selectedItem={props.resourcesView.active.selectedItem}
+				selectedIndex={props.resourcesView.active.selectedIndex}
+				status={props.resourcesView.active.status}
+				error={props.resourcesView.active.error}
+				visibleColumns={props.resourcesView.active.view.visibleColumns ?? []}
+				milestoneIssues={props.resourcesView.milestoneIssues}
+				deployments={props.resourcesView.deployments}
+				isWideLayout={layout.isWideLayout}
+				width={layout.contentWidth}
+				height={layout.wideBodyHeight}
+				leftWidth={layout.leftPaneWidth}
+				rightWidth={layout.rightPaneWidth}
+				setSelectedIndex={props.resourcesView.active.setSelectedIndex}
+			/>
+		)
+	}
+	if (activeWorkspaceSurface === "notifications") {
+		return (
+			<NotificationSurface
+				items={props.notificationsView.items}
+				selected={props.notificationsView.selected}
+				selectedIndex={props.notificationsView.selectedIndex}
+				selectedIds={props.notificationsView.selectedIds}
+				status={props.notificationsView.status}
+				error={props.notificationsView.error}
+				includeRead={props.notificationsView.includeRead}
+				typeFilter={props.notificationsView.typeFilter}
+				filterQuery={props.notificationsView.filterQuery}
+				visibleColumns={props.notificationsView.view.visibleColumns ?? []}
+				isWideLayout={layout.isWideLayout}
+				width={layout.contentWidth}
+				height={layout.wideBodyHeight}
+				leftWidth={layout.leftPaneWidth}
+				rightWidth={layout.rightPaneWidth}
+				setSelectedIndex={props.notificationsView.setSelectedIndex}
 			/>
 		)
 	}
@@ -160,7 +263,11 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			narrowPreviewBodyScrollable={derivations.narrowPreviewBodyScrollable}
 			activeFilterLabel={props.pullRequestActiveFilterLabel}
 			detailJunctions={derivations.detailJunctions}
-			prListProps={derivations.prListProps}
+			prListProps={{
+				...derivations.prListProps,
+				bulkSelectedUrls: props.selectedItemUrls,
+				onTogglePullRequestSelection: props.toggleItemSelection,
+			}}
 			selectedPullRequest={props.selectedPullRequest}
 			selectedComments={props.selectedComments}
 			selectedCommentsStatus={props.selectedCommentsStatus}
@@ -184,6 +291,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			selectedDiffCommentAnchor={props.selectedDiffCommentAnchor}
 			selectedDiffCommentLabel={props.selectedDiffCommentLabel}
 			selectedDiffCommentThread={props.selectedDiffCommentThread}
+			pendingReviewCount={props.pendingReviewCount}
 			selectDiffCommentLine={props.selectDiffCommentLine}
 			setDiffRenderableRef={props.setDiffRenderableRef}
 			detailFullView={detailFullView}

@@ -1,12 +1,10 @@
-import { mkdir } from "node:fs/promises"
-import { homedir } from "node:os"
-import { dirname, join } from "node:path"
 import { Effect, Schema } from "effect"
+import { readStoredConfig, updateStoredConfig, type GhuiConfig } from "./configStore.js"
 import { isThemeId, type ThemeId } from "./ui/colors.js"
 import { normalizeThemeConfig, type ThemeConfig } from "./themeConfig.js"
 import { DiffWhitespaceMode } from "./ui/diff.js"
 
-interface StoredConfig {
+interface StoredConfig extends GhuiConfig {
 	readonly theme?: unknown
 	readonly themeMode?: unknown
 	readonly darkTheme?: unknown
@@ -18,47 +16,26 @@ interface StoredConfig {
 	readonly repoPaths?: unknown
 }
 
-const configDirectory = () => {
-	if (process.env.GHUI_CONFIG_DIR) return process.env.GHUI_CONFIG_DIR
-	if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "ghui")
-	if (process.platform === "win32" && process.env.APPDATA) return join(process.env.APPDATA, "ghui")
-	return join(homedir(), ".config", "ghui")
-}
+export { configPath } from "./configStore.js"
 
-export const configPath = () => join(configDirectory(), "config.json")
-
-const parseConfig = (text: string): StoredConfig => {
-	const value = JSON.parse(text) as unknown
-	return value && typeof value === "object" ? value : {}
-}
-
-const readStoredConfig = async () => {
-	const file = Bun.file(configPath())
-	return (await file.exists()) ? parseConfig(await file.text()) : {}
-}
-
-const writeStoredConfig = async (config: StoredConfig) => {
-	const path = configPath()
-	await mkdir(dirname(path), { recursive: true })
-	await Bun.write(path, `${JSON.stringify(config, null, "\t")}\n`)
-}
+const readThemeConfig = async (): Promise<StoredConfig> => (await readStoredConfig()).config
 
 export const loadStoredThemeId: Effect.Effect<ThemeId> = Effect.catchCause(
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
+		const config = await readThemeConfig()
 		return isThemeId(config.theme) ? config.theme : "ghui"
 	}),
 	() => Effect.succeed("ghui" satisfies ThemeId),
 )
 
 export const loadStoredThemeConfig: Effect.Effect<ThemeConfig> = Effect.catchCause(
-	Effect.tryPromise(async () => normalizeThemeConfig(await readStoredConfig())),
+	Effect.tryPromise(async () => normalizeThemeConfig(await readThemeConfig())),
 	() => Effect.succeed(normalizeThemeConfig({})),
 )
 
 export const loadStoredDiffWhitespaceMode: Effect.Effect<DiffWhitespaceMode> = Effect.catchCause(
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
+		const config = await readThemeConfig()
 		return Schema.is(DiffWhitespaceMode)(config.diffWhitespaceMode) ? config.diffWhitespaceMode : "ignore"
 	}),
 	() => Effect.succeed("ignore" satisfies DiffWhitespaceMode),
@@ -66,7 +43,7 @@ export const loadStoredDiffWhitespaceMode: Effect.Effect<DiffWhitespaceMode> = E
 
 export const loadStoredSystemThemeAutoReload: Effect.Effect<boolean> = Effect.catchCause(
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
+		const config = await readThemeConfig()
 		return typeof config.systemThemeAutoReload === "boolean" ? config.systemThemeAutoReload : false
 	}),
 	() => Effect.succeed(false),
@@ -74,7 +51,7 @@ export const loadStoredSystemThemeAutoReload: Effect.Effect<boolean> = Effect.ca
 
 export const loadStoredShowScrollbars: Effect.Effect<boolean> = Effect.catchCause(
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
+		const config = await readThemeConfig()
 		return typeof config.showScrollbars === "boolean" ? config.showScrollbars : false
 	}),
 	() => Effect.succeed(false),
@@ -93,7 +70,7 @@ const parseRepoPaths = (value: unknown): Readonly<Record<string, string>> => {
 
 export const loadStoredEditorConfig: Effect.Effect<StoredEditorConfig> = Effect.catchCause(
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
+		const config = await readThemeConfig()
 		const editorCommand = typeof config.editorCommand === "string" && config.editorCommand.trim().length > 0 ? config.editorCommand : null
 		return { editorCommand, repoPaths: parseRepoPaths(config.repoPaths) }
 	}),
@@ -102,16 +79,12 @@ export const loadStoredEditorConfig: Effect.Effect<StoredEditorConfig> = Effect.
 
 export const saveStoredThemeId = (theme: ThemeId): Effect.Effect<void> =>
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
-		if (config.themeMode !== "system" && config.theme === theme) return
-
-		await writeStoredConfig({ ...config, themeMode: "fixed", theme })
+		await updateStoredConfig((config) => (config.themeMode !== "system" && config.theme === theme ? config : { ...config, themeMode: "fixed", theme }))
 	})
 
 export const saveStoredThemeConfig = (themeConfig: ThemeConfig): Effect.Effect<void> =>
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
-		const nextConfig =
+		await updateStoredConfig((config) =>
 			themeConfig.mode === "fixed"
 				? { ...config, themeMode: "fixed", theme: themeConfig.theme }
 				: {
@@ -119,15 +92,11 @@ export const saveStoredThemeConfig = (themeConfig: ThemeConfig): Effect.Effect<v
 						themeMode: "system",
 						darkTheme: themeConfig.darkTheme,
 						lightTheme: themeConfig.lightTheme,
-					}
-
-		await writeStoredConfig(nextConfig)
+					},
+		)
 	})
 
 export const saveStoredDiffWhitespaceMode = (diffWhitespaceMode: DiffWhitespaceMode): Effect.Effect<void> =>
 	Effect.tryPromise(async () => {
-		const config = await readStoredConfig()
-		if (config.diffWhitespaceMode === diffWhitespaceMode) return
-
-		await writeStoredConfig({ ...config, diffWhitespaceMode })
+		await updateStoredConfig((config) => (config.diffWhitespaceMode === diffWhitespaceMode ? config : { ...config, diffWhitespaceMode }))
 	})
