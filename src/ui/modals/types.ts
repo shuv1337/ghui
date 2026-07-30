@@ -293,24 +293,36 @@ export interface DeleteReleaseModalState {
 	readonly error: string | null
 }
 
-export type ResourceEditorField = "name" | "source" | "title" | "description" | "dueOn" | "state"
+export type BranchResourceEditorField = "name" | "source"
+export type MilestoneResourceEditorField = "title" | "description" | "dueOn" | "state"
+export type ResourceEditorField = BranchResourceEditorField | MilestoneResourceEditorField
 
-export interface ResourceEditorModalState {
-	readonly kind: "branch" | "milestone"
+interface ResourceEditorModalBase {
 	readonly mode: "create" | "edit"
 	readonly repository: string
+	readonly running: boolean
+	readonly error: string | null
+}
+
+export interface BranchResourceEditorModalState extends ResourceEditorModalBase {
+	readonly kind: "branch"
 	readonly branchName: string
 	readonly sourceIndex: number
 	readonly sourceBranches: readonly BranchItem[]
+	readonly focus: BranchResourceEditorField
+}
+
+export interface MilestoneResourceEditorModalState extends ResourceEditorModalBase {
+	readonly kind: "milestone"
 	readonly milestoneNumber: number | null
 	readonly title: string
 	readonly description: string
 	readonly dueOn: string
 	readonly state: "open" | "closed"
-	readonly focus: ResourceEditorField
-	readonly running: boolean
-	readonly error: string | null
+	readonly focus: MilestoneResourceEditorField
 }
+
+export type ResourceEditorModalState = BranchResourceEditorModalState | MilestoneResourceEditorModalState
 
 export interface DeleteResourceModalState {
 	readonly kind: "branch" | "milestone"
@@ -549,11 +561,6 @@ export const initialResourceEditorModalState: ResourceEditorModalState = {
 	branchName: "",
 	sourceIndex: 0,
 	sourceBranches: [],
-	milestoneNumber: null,
-	title: "",
-	description: "",
-	dueOn: "",
-	state: "open",
 	focus: "name",
 	running: false,
 	error: null,
@@ -602,7 +609,7 @@ export const Modal = Data.taggedEnum<Modal>()
 export const initialModal: Modal = Modal.None()
 
 export type ModalTag = Modal["_tag"]
-export type ModalState<Tag extends Exclude<ModalTag, "None">> = Omit<Extract<Modal, { _tag: Tag }>, "_tag">
+export type ModalState<Tag extends Exclude<ModalTag, "None">> = Tag extends "ResourceEditor" ? ResourceEditorModalState : Omit<Extract<Modal, { _tag: Tag }>, "_tag">
 
 export const modalInitialStates = {
 	Label: initialLabelModalState,

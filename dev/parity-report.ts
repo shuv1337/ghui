@@ -1,7 +1,12 @@
+import { cliEntrypointIds } from "../src/cli.ts"
+import { globalCommands } from "../src/commands/builtins.ts"
 import { buildParityReport, parityManifest } from "../test/parity/manifest.ts"
 import { validateScenarioEvidence } from "../test/parity/scenarios.ts"
 
-const report = buildParityReport()
+const report = buildParityReport(new Date().toISOString(), parityManifest, {
+	registeredCommandIds: globalCommands.map((command) => command.id),
+	registeredEntrypointIds: cliEntrypointIds,
+})
 const evidenceProblems = validateScenarioEvidence(parityManifest, new URL("..", import.meta.url).pathname)
 
 if (process.argv.includes("--json")) {

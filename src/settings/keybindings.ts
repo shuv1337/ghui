@@ -12,11 +12,13 @@ const RESERVED = new Set(["ctrl+c", "escape"])
 export const keymapCommandAliases: Readonly<Record<string, readonly string[]>> = {
 	"command.open": ["command.open", "command.open-help"],
 	"filter.open": ["list.filter", "actions.search"],
+	"filter.clear": ["filter.clear"],
 	"theme.open": ["list.theme", "detail.theme"],
 	"detail.open": ["list.detail.open"],
 	"detail.close": ["detail.close"],
 	"runs.open": ["list.runs", "detail.runs"],
 	"runs.refresh": ["runs.refresh"],
+	"runs.close": ["runs.escape"],
 	"comments.open": ["list.comments", "detail.comments"],
 	"comments.new": ["comments-view.new"],
 	"comments.reply": ["comments-view.confirm"],
@@ -50,20 +52,37 @@ export const keymapCommandAliases: Readonly<Record<string, readonly string[]>> =
 	"release.create": ["list.create-release"],
 	"release.edit": ["list.edit-release"],
 	"release.delete": ["list.delete-release"],
+	"release.refresh": ["release.refresh"],
 	"branch.create": ["list.create-branch"],
 	"branch.delete": ["list.delete-branch"],
+	"branch.refresh": ["branch.refresh"],
 	"milestone.create": ["list.create-milestone"],
 	"milestone.edit": ["list.edit-milestone"],
 	"milestone.toggleState": ["list.toggle-milestone"],
 	"milestone.delete": ["list.delete-milestone"],
+	"milestone.refresh": ["milestone.refresh"],
 	"environment.open": ["list.open-environment"],
+	"environment.refresh": ["environment.refresh"],
+	"runner.refresh": ["runner.refresh"],
 	"notification.open": ["list.notification-open"],
 	"notification.toggleReadFilter": ["list.notification-toggle-read-filter"],
 	"notification.cycleTypeFilter": ["list.notification-type-filter"],
 	"notification.select": ["list.notification-select"],
 	"notification.markRead": ["list.notification-mark-read"],
 	"notification.markSelectedRead": ["list.notification-mark-selected-read"],
+	"notification.refresh": ["notification.refresh"],
+	"workspace.repos": ["workspace.repos"],
+	"workspace.pullRequests": ["workspace.pullRequests"],
+	"workspace.issues": ["workspace.issues"],
+	"workspace.releases": ["workspace.releases"],
+	"workspace.actions": ["workspace.actions"],
+	"workspace.branches": ["workspace.branches"],
+	"workspace.milestones": ["workspace.milestones"],
+	"workspace.environments": ["workspace.environments"],
+	"workspace.runners": ["workspace.runners"],
 	"diff.open": ["list.diff", "detail.diff"],
+	"diff.close": ["diff.escape"],
+	"diff.open-comment-target": ["diff.open-comment"],
 	"diff.toggle-range": ["diff.toggle-range"],
 	"diff.toggle-view": ["diff.toggle-view"],
 	"diff.toggle-wrap": ["diff.toggle-wrap"],
@@ -83,6 +102,46 @@ export const keymapCommandAliases: Readonly<Record<string, readonly string[]>> =
 	"actions.cycleStatusFilter": ["actions.cycle-status-filter"],
 	"actions.cycleWorkflowFilter": ["actions.cycle-workflow-filter"],
 	"view.configure": ["list.configure-view"],
+	"pull.refresh": ["pull.refresh"],
+	"issue.refresh": ["issue.refresh"],
+	"app.quit": ["app.quit-or-close", "app.quit-or-close-q"],
+}
+
+export interface KeymapAliasProblem {
+	readonly commandId: string
+	readonly message: string
+}
+
+export const validateKeymapCommandAliases = (
+	base: Keymap<AppCtx>,
+	registeredCommands: readonly { readonly id: string; readonly shortcut?: string }[],
+	explicitExclusions: Readonly<Record<string, string>> = {},
+): readonly KeymapAliasProblem[] => {
+	const problems: KeymapAliasProblem[] = []
+	const registered = new Map(registeredCommands.map((command) => [command.id, command]))
+	const bindingIds = new Set(base.bindings.flatMap((binding) => (binding.meta?.id ? [binding.meta.id] : [])))
+	const aliasOwners = new Map<string, string>()
+
+	for (const [commandId, aliases] of Object.entries(keymapCommandAliases)) {
+		if (!registered.has(commandId)) problems.push({ commandId, message: "alias owner is absent from the command registry" })
+		for (const alias of aliases) {
+			if (!bindingIds.has(alias)) problems.push({ commandId, message: `unknown keymap alias: ${alias}` })
+			const owner = aliasOwners.get(alias)
+			if (owner && owner !== commandId) problems.push({ commandId, message: `keymap alias ${alias} is also owned by ${owner}` })
+			else aliasOwners.set(alias, commandId)
+		}
+	}
+
+	for (const [commandId, reason] of Object.entries(explicitExclusions)) {
+		if (!registered.has(commandId)) problems.push({ commandId, message: "excluded command is absent from the command registry" })
+		if (!reason.trim()) problems.push({ commandId, message: "excluded command requires a reason" })
+	}
+	for (const command of registeredCommands) {
+		if (command.shortcut && !keymapCommandAliases[command.id] && !explicitExclusions[command.id]) {
+			problems.push({ commandId: command.id, message: "shortcut command has no keymap alias or explicit exclusion" })
+		}
+	}
+	return problems
 }
 
 export const configuredShortcutFor = (commandId: string, fallback: string | undefined, overrides: Readonly<Record<string, readonly string[]>>): string | undefined => {

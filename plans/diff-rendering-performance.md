@@ -27,13 +27,15 @@ We looked at hunk, which solves a similar terminal diff problem elegantly. The u
 - New diff row renderer: render terminal spans directly when we need syntax and word-diff highlighting that OpenTUI `<diff>` cannot expose.
 - New highlight cache: key by file content, theme, language, view mode, and whitespace mode; dedupe in-flight work and prefetch selected/near-visible files.
 
-## Decisions
+## Open Questions
 
-- OpenTUI's `<diff>` already exposes Tree-sitter syntax styling and distinct `addedContentBg` / `removedContentBg` word-change spans, so ghui keeps that renderer.
-- Unified and split continue to share one measured file/anchor model.
-- File-level windowing is sufficient for the first parity release: a one-viewport halo mounts nearby sections while exact-height placeholders preserve global geometry.
-- The selected comment's file is always force-mounted, so offscreen keyboard jumps are deterministic.
-- Parser clients remain OpenTUI-owned; ghui validates repeated create/destroy lifecycle separately and does not retain parser buffers.
+All original questions are resolved:
+
+- **Renderer:** OpenTUI's `<diff>` already exposes Tree-sitter syntax styling and distinct `addedContentBg` / `removedContentBg` word-change spans, so ghui keeps that renderer.
+- **Unified versus split:** both continue to share one measured file/anchor model.
+- **Windowing granularity:** file-level windowing is sufficient for the first parity release; a one-viewport halo mounts nearby sections while exact-height placeholders preserve global geometry.
+- **Offscreen comment selection:** the selected comment's file is always force-mounted, so keyboard jumps are deterministic.
+- **Parser ownership:** parser clients remain OpenTUI-owned; ghui validates repeated create/destroy lifecycle separately and does not retain parser buffers.
 
 ## Out Of Scope (For V1)
 

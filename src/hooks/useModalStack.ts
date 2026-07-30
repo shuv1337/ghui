@@ -172,8 +172,8 @@ export const useModalStack = (): ModalStack => {
 	const openRepositoryModalActive = Modal.$is("OpenRepository")(activeModal)
 	const releaseEditorModalActive = Modal.$is("ReleaseEditor")(activeModal)
 	const deleteReleaseModalActive = Modal.$is("DeleteRelease")(activeModal)
-	const resourceEditorModalActive = activeModal._tag === "ResourceEditor"
-	const deleteResourceModalActive = activeModal._tag === "DeleteResource"
+	const resourceEditorModalActive = Modal.$is("ResourceEditor")(activeModal)
+	const deleteResourceModalActive = Modal.$is("DeleteResource")(activeModal)
 	return {
 		activeModal,
 		closeActiveModal,
@@ -222,7 +222,7 @@ export const useModalStack = (): ModalStack => {
 		openRepositoryModal: openRepositoryModalActive ? activeModal : initialOpenRepositoryModalState,
 		releaseEditorModal: releaseEditorModalActive ? activeModal : initialReleaseEditorModalState,
 		deleteReleaseModal: deleteReleaseModalActive ? activeModal : initialDeleteReleaseModalState,
-		resourceEditorModal: resourceEditorModalActive ? activeModal : initialResourceEditorModalState,
+		resourceEditorModal: resourceEditorModalActive ? (activeModal as unknown as ResourceEditorModalState) : initialResourceEditorModalState,
 		deleteResourceModal: deleteResourceModalActive ? activeModal : initialDeleteResourceModalState,
 		setLabelModal: makeModalSetter(setActiveModal, "Label"),
 		setItemEditorModal: makeModalSetter(setActiveModal, "ItemEditor"),

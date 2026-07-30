@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import type { CreateMilestoneInput, EditMilestoneInput, MilestoneIssue, MilestoneItem } from "../../domain.js"
-import type { GitHubClient } from "./client.js"
+import { flattenPages, type GitHubClient } from "./client.js"
 
 const NullableString = Schema.NullOr(Schema.String)
 const MilestoneSchema = Schema.Struct({
@@ -22,9 +22,6 @@ const MilestoneIssueSchema = Schema.Array(
 		url: Schema.String,
 	}),
 )
-
-const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
 
 const normalize = (repository: string, milestone: Schema.Schema.Type<typeof MilestoneSchema>): MilestoneItem => ({
 	repository,

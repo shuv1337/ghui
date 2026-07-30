@@ -18,6 +18,7 @@ export interface ParityCapability {
 	readonly milestone: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | null
 	readonly status: ParityStatus
 	readonly commandIds: readonly string[]
+	readonly entrypointIds?: readonly string[]
 	readonly serviceMethods: readonly string[]
 	readonly scenarios: ParityScenarios
 	readonly requiresLive: boolean
@@ -51,6 +52,7 @@ const excluded = (id: string, title: string, exclusionReason: string): ParityCap
 	milestone: null,
 	status: "excluded",
 	commandIds: [],
+	entrypointIds: [],
 	serviceMethods: [],
 	scenarios: { unit: [], render: [], interaction: [], live: [] },
 	requiresLive: false,
@@ -75,7 +77,7 @@ export const parityManifest = [
 		scope: "pullRequest",
 		milestone: 0,
 		status: "partial",
-		commandIds: ["workspace.pullRequests", "item.refresh"],
+		commandIds: ["workspace.pullRequests", "pull.refresh"],
 		serviceMethods: ["listPullRequestPage", "getPullRequestDetails"],
 		scenarios: scenarios("pull-request-browse"),
 		requiresLive: true,
@@ -86,7 +88,7 @@ export const parityManifest = [
 		scope: "issue",
 		milestone: 0,
 		status: "partial",
-		commandIds: ["workspace.issues", "item.refresh"],
+		commandIds: ["workspace.issues", "issue.refresh"],
 		serviceMethods: ["listIssuePage", "listIssueComments"],
 		scenarios: scenarios("issue-browse"),
 		requiresLive: true,
@@ -97,7 +99,7 @@ export const parityManifest = [
 		scope: "program",
 		milestone: 0,
 		status: "complete",
-		commandIds: ["appearance.theme"],
+		commandIds: ["theme.open"],
 		serviceMethods: [],
 		scenarios: scenarios("themes", { live: false }),
 		requiresLive: false,
@@ -130,7 +132,7 @@ export const parityManifest = [
 		scope: "program",
 		milestone: 1,
 		status: "complete",
-		commandIds: ["workspace.surfacePicker"],
+		commandIds: ["workspace.releases", "workspace.branches", "workspace.notifications"],
 		serviceMethods: [],
 		scenarios: scenarios("surface-registry", { live: false }),
 		requiresLive: false,
@@ -152,7 +154,7 @@ export const parityManifest = [
 		scope: "program",
 		milestone: 1,
 		status: "complete",
-		commandIds: ["item.refresh"],
+		commandIds: ["pull.refresh", "issue.refresh"],
 		serviceMethods: [],
 		scenarios: scenarios("cache-lifecycle", { live: false }),
 		requiresLive: false,
@@ -163,7 +165,7 @@ export const parityManifest = [
 		scope: "issue",
 		milestone: 2,
 		status: "partial",
-		commandIds: ["issue.create", "issue.edit", "issue.close", "issue.reopen", "issue.delete", "item.labels", "item.assignees", "item.milestone"],
+		commandIds: ["issue.create", "issue.edit", "issue.close", "issue.reopen", "issue.delete", "pull.labels", "item.assignees", "item.milestone"],
 		serviceMethods: ["createIssue", "editIssue", "closeIssue", "reopenIssue", "deleteIssue"],
 		scenarios: scenarios("issue-management"),
 		requiresLive: true,
@@ -177,11 +179,11 @@ export const parityManifest = [
 		commandIds: [
 			"pullRequest.create",
 			"pullRequest.edit",
-			"pullRequest.close",
+			"pull.close",
 			"pullRequest.reopen",
-			"pullRequest.toggleDraft",
+			"pull.toggle-draft",
 			"pullRequest.approve",
-			"pullRequest.merge",
+			"pull.merge",
 			"pullRequest.reviewers",
 			"pullRequest.base",
 		],
@@ -195,7 +197,7 @@ export const parityManifest = [
 		scope: "repository",
 		milestone: 2,
 		status: "partial",
-		commandIds: ["item.labels", "item.assignees", "pullRequest.reviewers", "item.milestone", "pullRequest.base"],
+		commandIds: ["pull.labels", "item.assignees", "pullRequest.reviewers", "item.milestone", "pullRequest.base"],
 		serviceMethods: ["listRepoLabels", "listAssignees", "listReviewers", "listMilestones", "listBranches"],
 		scenarios: scenarios("metadata-selectors"),
 		requiresLive: true,
@@ -239,7 +241,7 @@ export const parityManifest = [
 		scope: "pullRequest",
 		milestone: 3,
 		status: "partial",
-		commandIds: ["pullRequest.diff", "diff.toggleLayout", "diff.toggleWhitespace", "diff.toggleWrap"],
+		commandIds: ["diff.open", "diff.toggle-view", "diff.toggle-whitespace", "diff.toggle-wrap"],
 		serviceMethods: ["getPullRequestDiff"],
 		scenarios: scenarios("diff-rendering"),
 		requiresLive: true,
@@ -367,7 +369,8 @@ export const parityManifest = [
 		scope: "program",
 		milestone: 7,
 		status: "partial",
-		commandIds: ["cli.doctor", "cli.cacheList", "cli.cacheClean", "cli.open", "cli.repos"],
+		commandIds: [],
+		entrypointIds: ["doctor", "cache.list", "cache.clean", "open", "repos"],
 		serviceMethods: [],
 		scenarios: scenarios("cli-operations"),
 		requiresLive: true,
@@ -445,13 +448,17 @@ const duplicateValues = (values: readonly string[]) => {
 
 export interface ParityManifestValidationOptions {
 	readonly registeredCapabilityIds?: readonly string[]
+	readonly registeredCommandIds?: readonly string[]
+	readonly registeredEntrypointIds?: readonly string[]
 }
 
 export const validateParityManifest = (
 	manifest: readonly ParityCapability[] = parityManifest,
-	{ registeredCapabilityIds = [] }: ParityManifestValidationOptions = {},
+	{ registeredCapabilityIds = [], registeredCommandIds, registeredEntrypointIds }: ParityManifestValidationOptions = {},
 ): readonly ParityManifestProblem[] => {
 	const problems: ParityManifestProblem[] = []
+	const commandIds = registeredCommandIds ? new Set(registeredCommandIds) : null
+	const entrypointIds = registeredEntrypointIds ? new Set(registeredEntrypointIds) : null
 	for (const id of duplicateValues(manifest.map((capability) => capability.id))) {
 		problems.push({ capabilityId: id, message: "duplicate capability id" })
 	}
@@ -464,8 +471,14 @@ export const validateParityManifest = (
 		}
 
 		if (capability.milestone === null) problems.push({ capabilityId: capability.id, message: "in-scope capability requires an owner milestone" })
-		if (capability.commandIds.length === 0 && capability.serviceMethods.length === 0) {
-			problems.push({ capabilityId: capability.id, message: "in-scope capability requires a command id or service method" })
+		if (capability.commandIds.length === 0 && (capability.entrypointIds?.length ?? 0) === 0 && capability.serviceMethods.length === 0) {
+			problems.push({ capabilityId: capability.id, message: "in-scope capability requires a command id, CLI entrypoint, or service method" })
+		}
+		for (const commandId of capability.commandIds) {
+			if (commandIds && !commandIds.has(commandId)) problems.push({ capabilityId: capability.id, message: `unknown command id: ${commandId}` })
+		}
+		for (const entrypointId of capability.entrypointIds ?? []) {
+			if (entrypointIds && !entrypointIds.has(entrypointId)) problems.push({ capabilityId: capability.id, message: `unknown CLI entrypoint id: ${entrypointId}` })
 		}
 
 		if (capability.scenarios.unit.length === 0) problems.push({ capabilityId: capability.id, message: "in-scope capability requires a unit scenario" })
@@ -502,7 +515,11 @@ export interface ParityReport {
 	readonly problems: readonly ParityManifestProblem[]
 }
 
-export const buildParityReport = (generatedAt = new Date().toISOString(), manifest: readonly ParityCapability[] = parityManifest): ParityReport => {
+export const buildParityReport = (
+	generatedAt = new Date().toISOString(),
+	manifest: readonly ParityCapability[] = parityManifest,
+	validationOptions: ParityManifestValidationOptions = {},
+): ParityReport => {
 	const counts = Object.fromEntries(parityStatuses.map((status) => [status, manifest.filter((capability) => capability.status === status).length])) as Record<ParityStatus, number>
 	const milestones = Array.from({ length: 8 }, (_, milestone) => {
 		const entries = manifest.filter((capability) => capability.milestone === milestone)
@@ -519,6 +536,6 @@ export const buildParityReport = (generatedAt = new Date().toISOString(), manife
 		counts,
 		milestones,
 		exclusions: manifest.filter((capability) => capability.status === "excluded").map((capability) => ({ id: capability.id, reason: capability.exclusionReason ?? "" })),
-		problems: validateParityManifest(manifest),
+		problems: validateParityManifest(manifest, validationOptions),
 	}
 }

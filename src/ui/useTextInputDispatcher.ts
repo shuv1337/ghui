@@ -197,10 +197,12 @@ export const useTextInputDispatcher = (input: UseTextInputDispatcherInput): void
 			if (input.resourceEditorModal.running || !isSingleLineInputKey(key)) return
 			input.setResourceEditorModal((current) => {
 				if (current.focus === "source" || current.focus === "state") return current
-				const field = current.kind === "branch" ? "branchName" : current.focus === "title" || current.focus === "description" || current.focus === "dueOn" ? current.focus : null
-				if (!field) return current
+				if (current.kind === "branch") {
+					const value = editSingleLineInput(current.branchName, key) ?? current.branchName
+					return value === current.branchName ? current : { ...current, branchName: value, error: null }
+				}
+				const field = current.focus
 				const previous = current[field]
-				if (typeof previous !== "string") return current
 				const value = editSingleLineInput(previous, key) ?? previous
 				return value === previous ? current : { ...current, [field]: value, error: null }
 			})

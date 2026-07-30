@@ -1,5 +1,5 @@
 ---
-"@kitlangton/ghui": patch
+"@kitlangton/ghui": minor
 ---
 
 Add a repository Releases surface with list and detail views, create and edit forms, guarded deletion, keyboard and mouse navigation, and cache-backed refreshes.

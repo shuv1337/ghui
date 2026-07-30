@@ -297,23 +297,6 @@ const RepositoryUserSchema = Schema.Struct({
 
 export const RepositoryUsersResponseSchema = Schema.Union([Schema.Array(RepositoryUserSchema), Schema.Array(Schema.Array(RepositoryUserSchema))])
 
-const RepositoryMilestoneSchema = Schema.Struct({
-	number: Schema.Number,
-	title: Schema.String,
-	state: Schema.String,
-	due_on: OptionalNullableString,
-})
-
-export const RepositoryMilestonesResponseSchema = Schema.Union([Schema.Array(RepositoryMilestoneSchema), Schema.Array(Schema.Array(RepositoryMilestoneSchema))])
-
-const RepositoryBranchSchema = Schema.Struct({
-	name: Schema.String,
-	protected: Schema.Boolean,
-	commit: Schema.Struct({ sha: Schema.String }),
-})
-
-export const RepositoryBranchesResponseSchema = Schema.Union([Schema.Array(RepositoryBranchSchema), Schema.Array(Schema.Array(RepositoryBranchSchema))])
-
 // ---------------------------------------------------------------------------
 // Derived type aliases
 // ---------------------------------------------------------------------------

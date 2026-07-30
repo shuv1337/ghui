@@ -47,13 +47,85 @@ import type { SurfaceViewConfig } from "../../configStore.js"
 
 export type ResourceSurfaceId = Extract<WorkspaceSurface, "branches" | "milestones" | "environments" | "runners">
 
-const resourceKey = (item: BranchItem | MilestoneItem | EnvironmentItem | RepositoryRunner) =>
-	"name" in item && "sha" in item ? item.name : "number" in item ? String(item.number) : "protectionRules" in item ? String(item.id) : String(item.id)
+type ResourceItem = BranchItem | MilestoneItem | EnvironmentItem | RepositoryRunner
+type Setter<T> = (next: T | ((current: T) => T)) => void
+
+interface ResourceListState<T extends ResourceItem> {
+	readonly items: readonly T[]
+	readonly selectedItem: T | null
+	readonly selectedIndex: number
+	readonly setSelectedIndex: Setter<number>
+	readonly view: SurfaceViewConfig
+	readonly replaceLoaded: (items: readonly T[]) => void
+}
+
+const useResourceListState = <T extends ResourceItem>({
+	surface,
+	rawItems,
+	setRawItems,
+	selectedIndex,
+	setSelectedIndex,
+	setSelectedAtom,
+	keyOf,
+}: {
+	readonly surface: ResourceSurfaceId
+	readonly rawItems: readonly T[]
+	readonly setRawItems: Setter<readonly T[]>
+	readonly selectedIndex: number
+	readonly setSelectedIndex: Setter<number>
+	readonly setSelectedAtom: (item: T | null) => void
+	readonly keyOf: (item: T) => string
+}): ResourceListState<T> => {
+	const { view } = useSurfaceView(surface)
+	const items = useMemo(() => applySurfaceView(rawItems, view, surface), [rawItems, view, surface])
+	const selectedItem = items[selectedIndex] ?? null
+	const selectedKeyRef = useRef<string | null>(null)
+	const setVisibleIndex = useCallback(
+		(next: number | ((current: number) => number)) =>
+			setSelectedIndex((current) => {
+				const index = typeof next === "function" ? next(current) : next
+				selectedKeyRef.current = items[index] ? keyOf(items[index]!) : null
+				return index
+			}),
+		[items, keyOf, setSelectedIndex],
+	)
+	const replaceLoaded = useCallback(
+		(next: readonly T[]) => {
+			const visibleNext = applySurfaceView(next, view, surface)
+			const preserved = selectedKeyRef.current ? visibleNext.findIndex((item) => keyOf(item) === selectedKeyRef.current) : -1
+			const nextIndex = preserved >= 0 ? preserved : 0
+			setRawItems(next)
+			setSelectedIndex(nextIndex)
+			selectedKeyRef.current = visibleNext[nextIndex] ? keyOf(visibleNext[nextIndex]!) : null
+		},
+		[keyOf, setRawItems, setSelectedIndex, surface, view],
+	)
+
+	useEffect(() => setSelectedAtom(selectedItem), [selectedItem, setSelectedAtom])
+	useEffect(() => {
+		setSelectedIndex((current) => {
+			const preserved = selectedKeyRef.current ? items.findIndex((item) => keyOf(item) === selectedKeyRef.current) : -1
+			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(items.length - 1, current))
+			selectedKeyRef.current = items[next] ? keyOf(items[next]!) : null
+			return next
+		})
+	}, [items, keyOf, setSelectedIndex])
+
+	return { items, selectedItem, selectedIndex, setSelectedIndex: setVisibleIndex, view, replaceLoaded }
+}
+
+const isResourceSurface = (surface: WorkspaceSurface): surface is ResourceSurfaceId =>
+	surface === "branches" || surface === "milestones" || surface === "environments" || surface === "runners"
+
+const branchKey = (branch: BranchItem) => branch.name
+const milestoneKey = (milestone: MilestoneItem) => String(milestone.number)
+const environmentKey = (environment: EnvironmentItem) => String(environment.id)
+const runnerKey = (runner: RepositoryRunner) => String(runner.id)
 
 export interface ResourceSurfaceModel {
 	readonly surface: ResourceSurfaceId
-	readonly items: readonly (BranchItem | MilestoneItem | EnvironmentItem | RepositoryRunner)[]
-	readonly selectedItem: BranchItem | MilestoneItem | EnvironmentItem | RepositoryRunner | null
+	readonly items: readonly ResourceItem[]
+	readonly selectedItem: ResourceItem | null
 	readonly selectedIndex: number
 	readonly setSelectedIndex: (index: number | ((current: number) => number)) => void
 	readonly status: LoadStatus
@@ -96,58 +168,46 @@ export const useResourceSurfaces = (repository: string | null, activeSurface: Wo
 	const [rawRunners, setRunners] = useAtom(runnerItemsAtom)
 	const [runnerIndex, setRunnerIndex] = useAtom(runnerSelectionAtom)
 	const setSelectedRunner = useAtomSet(selectedRunnerAtom)
-	const branchView = useSurfaceView("branches").view
-	const milestoneView = useSurfaceView("milestones").view
-	const environmentView = useSurfaceView("environments").view
-	const runnerView = useSurfaceView("runners").view
-	const branches = useMemo(() => applySurfaceView(rawBranches, branchView, "branches"), [rawBranches, branchView])
-	const milestones = useMemo(() => applySurfaceView(rawMilestones, milestoneView, "milestones"), [rawMilestones, milestoneView])
-	const environments = useMemo(() => applySurfaceView(rawEnvironments, environmentView, "environments"), [rawEnvironments, environmentView])
-	const runners = useMemo(() => applySurfaceView(rawRunners, runnerView, "runners"), [rawRunners, runnerView])
-	const selectedBranch = branches[branchIndex] ?? null
-	const selectedMilestone = milestones[milestoneIndex] ?? null
-	const selectedEnvironment = environments[environmentIndex] ?? null
-	const selectedRunner = runners[runnerIndex] ?? null
-	const branchKeyRef = useRef<string | null>(null)
-	const milestoneKeyRef = useRef<string | null>(null)
-	const environmentKeyRef = useRef<string | null>(null)
-	const runnerKeyRef = useRef<string | null>(null)
-	const setVisibleBranchIndex = useCallback(
-		(next: number | ((current: number) => number)) =>
-			setBranchIndex((current) => {
-				const index = typeof next === "function" ? next(current) : next
-				branchKeyRef.current = branches[index] ? resourceKey(branches[index]!) : null
-				return index
-			}),
-		[branches, setBranchIndex],
-	)
-	const setVisibleMilestoneIndex = useCallback(
-		(next: number | ((current: number) => number)) =>
-			setMilestoneIndex((current) => {
-				const index = typeof next === "function" ? next(current) : next
-				milestoneKeyRef.current = milestones[index] ? resourceKey(milestones[index]!) : null
-				return index
-			}),
-		[milestones, setMilestoneIndex],
-	)
-	const setVisibleEnvironmentIndex = useCallback(
-		(next: number | ((current: number) => number)) =>
-			setEnvironmentIndex((current) => {
-				const index = typeof next === "function" ? next(current) : next
-				environmentKeyRef.current = environments[index] ? resourceKey(environments[index]!) : null
-				return index
-			}),
-		[environments, setEnvironmentIndex],
-	)
-	const setVisibleRunnerIndex = useCallback(
-		(next: number | ((current: number) => number)) =>
-			setRunnerIndex((current) => {
-				const index = typeof next === "function" ? next(current) : next
-				runnerKeyRef.current = runners[index] ? resourceKey(runners[index]!) : null
-				return index
-			}),
-		[runners, setRunnerIndex],
-	)
+	const branchState = useResourceListState({
+		surface: "branches",
+		rawItems: rawBranches,
+		setRawItems: setBranches,
+		selectedIndex: branchIndex,
+		setSelectedIndex: setBranchIndex,
+		setSelectedAtom: setSelectedBranch,
+		keyOf: branchKey,
+	})
+	const milestoneState = useResourceListState({
+		surface: "milestones",
+		rawItems: rawMilestones,
+		setRawItems: setMilestones,
+		selectedIndex: milestoneIndex,
+		setSelectedIndex: setMilestoneIndex,
+		setSelectedAtom: setSelectedMilestone,
+		keyOf: milestoneKey,
+	})
+	const environmentState = useResourceListState({
+		surface: "environments",
+		rawItems: rawEnvironments,
+		setRawItems: setEnvironments,
+		selectedIndex: environmentIndex,
+		setSelectedIndex: setEnvironmentIndex,
+		setSelectedAtom: setSelectedEnvironment,
+		keyOf: environmentKey,
+	})
+	const runnerState = useResourceListState({
+		surface: "runners",
+		rawItems: rawRunners,
+		setRawItems: setRunners,
+		selectedIndex: runnerIndex,
+		setSelectedIndex: setRunnerIndex,
+		setSelectedAtom: setSelectedRunner,
+		keyOf: runnerKey,
+	})
+	const { items: branches, selectedItem: selectedBranch } = branchState
+	const { items: milestones, selectedItem: selectedMilestone } = milestoneState
+	const { items: environments, selectedItem: selectedEnvironment } = environmentState
+	const { items: runners, selectedItem: selectedRunner } = runnerState
 	const loadBranches = useAtomSet(loadBranchesAtom, { mode: "promise" })
 	const loadMilestones = useAtomSet(loadMilestonesAtom, { mode: "promise" })
 	const loadMilestoneIssues = useAtomSet(loadMilestoneIssuesAtom, { mode: "promise" })
@@ -174,103 +234,55 @@ export const useResourceSurfaces = (repository: string | null, activeSurface: Wo
 	const [generation, setGeneration] = useState(0)
 	const requestId = useRef(0)
 	const refresh = useCallback(() => setGeneration((value) => value + 1), [])
-	const isResource = activeSurface === "branches" || activeSurface === "milestones" || activeSurface === "environments" || activeSurface === "runners"
-
-	useEffect(() => setSelectedBranch(selectedBranch), [selectedBranch, setSelectedBranch])
-	useEffect(() => setSelectedMilestone(selectedMilestone), [selectedMilestone, setSelectedMilestone])
-	useEffect(() => setSelectedEnvironment(selectedEnvironment), [selectedEnvironment, setSelectedEnvironment])
-	useEffect(() => setSelectedRunner(selectedRunner), [selectedRunner, setSelectedRunner])
-
-	useEffect(() => {
-		setBranchIndex((current) => {
-			const preserved = branchKeyRef.current ? branches.findIndex((item) => resourceKey(item) === branchKeyRef.current) : -1
-			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(branches.length - 1, current))
-			branchKeyRef.current = branches[next] ? resourceKey(branches[next]!) : null
-			return next
-		})
-	}, [branches, setBranchIndex])
-	useEffect(() => {
-		setMilestoneIndex((current) => {
-			const preserved = milestoneKeyRef.current ? milestones.findIndex((item) => resourceKey(item) === milestoneKeyRef.current) : -1
-			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(milestones.length - 1, current))
-			milestoneKeyRef.current = milestones[next] ? resourceKey(milestones[next]!) : null
-			return next
-		})
-	}, [milestones, setMilestoneIndex])
-	useEffect(() => {
-		setEnvironmentIndex((current) => {
-			const preserved = environmentKeyRef.current ? environments.findIndex((item) => resourceKey(item) === environmentKeyRef.current) : -1
-			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(environments.length - 1, current))
-			environmentKeyRef.current = environments[next] ? resourceKey(environments[next]!) : null
-			return next
-		})
-	}, [environments, setEnvironmentIndex])
-	useEffect(() => {
-		setRunnerIndex((current) => {
-			const preserved = runnerKeyRef.current ? runners.findIndex((item) => resourceKey(item) === runnerKeyRef.current) : -1
-			const next = preserved >= 0 ? preserved : Math.max(0, Math.min(runners.length - 1, current))
-			runnerKeyRef.current = runners[next] ? resourceKey(runners[next]!) : null
-			return next
-		})
-	}, [runners, setRunnerIndex])
+	const isResource = isResourceSurface(activeSurface)
+	const resourceDescriptors: Readonly<
+		Record<
+			ResourceSurfaceId,
+			{
+				readonly items: readonly ResourceItem[]
+				readonly selectedItem: ResourceItem | null
+				readonly selectedIndex: number
+				readonly setSelectedIndex: Setter<number>
+				readonly view: SurfaceViewConfig
+				readonly load: (repository: string) => Promise<readonly ResourceItem[]>
+				readonly replaceLoaded: (items: readonly ResourceItem[]) => void
+			}
+		>
+	> = {
+		branches: {
+			...branchState,
+			load: loadBranches,
+			replaceLoaded: (items) => branchState.replaceLoaded(items as readonly BranchItem[]),
+		},
+		milestones: {
+			...milestoneState,
+			load: loadMilestones,
+			replaceLoaded: (items) => milestoneState.replaceLoaded(items as readonly MilestoneItem[]),
+		},
+		environments: {
+			...environmentState,
+			load: loadEnvironments,
+			replaceLoaded: (items) => environmentState.replaceLoaded(items as readonly EnvironmentItem[]),
+		},
+		runners: {
+			...runnerState,
+			load: loadRunners,
+			replaceLoaded: (items) => runnerState.replaceLoaded(items as readonly RepositoryRunner[]),
+		},
+	}
 
 	useEffect(() => {
 		if (!repository || !isResource) return
 		const surface = activeSurface
-		const currentItems = surface === "branches" ? branches : surface === "milestones" ? milestones : surface === "environments" ? environments : runners
+		const descriptor = resourceDescriptors[surface]
+		const currentItems = descriptor.items
 		const currentRequest = ++requestId.current
 		setStatusBySurface((value) => ({ ...value, [surface]: currentItems.length === 0 ? "loading" : "ready" }))
 		setErrorBySurface((value) => ({ ...value, [surface]: null }))
-		const request =
-			surface === "branches"
-				? loadBranches(repository)
-				: surface === "milestones"
-					? loadMilestones(repository)
-					: surface === "environments"
-						? loadEnvironments(repository)
-						: loadRunners(repository)
-		void request.then(
+		void descriptor.load(repository).then(
 			(next) => {
 				if (requestId.current !== currentRequest) return
-				const selectedKey =
-					surface === "branches"
-						? branchKeyRef.current
-						: surface === "milestones"
-							? milestoneKeyRef.current
-							: surface === "environments"
-								? environmentKeyRef.current
-								: runnerKeyRef.current
-				const visibleNext =
-					surface === "branches"
-						? applySurfaceView(next as readonly BranchItem[], branchView, "branches")
-						: surface === "milestones"
-							? applySurfaceView(next as readonly MilestoneItem[], milestoneView, "milestones")
-							: surface === "environments"
-								? applySurfaceView(next as readonly EnvironmentItem[], environmentView, "environments")
-								: applySurfaceView(next as readonly RepositoryRunner[], runnerView, "runners")
-				const nextIndex = selectedKey
-					? Math.max(
-							0,
-							visibleNext.findIndex((item) => resourceKey(item) === selectedKey),
-						)
-					: 0
-				if (surface === "branches") {
-					setBranches(next as readonly BranchItem[])
-					setBranchIndex(nextIndex)
-					branchKeyRef.current = visibleNext[nextIndex] ? resourceKey(visibleNext[nextIndex]!) : null
-				} else if (surface === "milestones") {
-					setMilestones(next as readonly MilestoneItem[])
-					setMilestoneIndex(nextIndex)
-					milestoneKeyRef.current = visibleNext[nextIndex] ? resourceKey(visibleNext[nextIndex]!) : null
-				} else if (surface === "environments") {
-					setEnvironments(next as readonly EnvironmentItem[])
-					setEnvironmentIndex(nextIndex)
-					environmentKeyRef.current = visibleNext[nextIndex] ? resourceKey(visibleNext[nextIndex]!) : null
-				} else {
-					setRunners(next as readonly RepositoryRunner[])
-					setRunnerIndex(nextIndex)
-					runnerKeyRef.current = visibleNext[nextIndex] ? resourceKey(visibleNext[nextIndex]!) : null
-				}
+				descriptor.replaceLoaded(next)
 				setStatusBySurface((value) => ({ ...value, [surface]: "ready" }))
 			},
 			(cause) => {
@@ -282,10 +294,10 @@ export const useResourceSurfaces = (repository: string | null, activeSurface: Wo
 		return () => {
 			requestId.current += 1
 		}
-		// Selection objects are intentionally captured at refresh start so a late
-		// response preserves that identity instead of chasing render-time movement.
+		// Each replaceLoaded callback captures its current view while preserving
+		// selection identity through the resource-specific descriptor key.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [activeSurface, generation, repository, branchView, milestoneView, environmentView, runnerView])
+	}, [activeSurface, generation, repository, branchState.replaceLoaded, milestoneState.replaceLoaded, environmentState.replaceLoaded, runnerState.replaceLoaded])
 
 	useEffect(() => {
 		if (activeSurface !== "milestones" || !selectedMilestone) {
@@ -325,55 +337,20 @@ export const useResourceSurfaces = (repository: string | null, activeSurface: Wo
 		}
 	}, [activeSurface, loadDeployments, selectedEnvironment, setDeployments])
 
-	const active: ResourceSurfaceModel | null = !isResource
-		? null
-		: activeSurface === "branches"
-			? {
-					surface: "branches",
-					items: branches,
-					selectedItem: selectedBranch,
-					selectedIndex: branchIndex,
-					setSelectedIndex: setVisibleBranchIndex,
-					status: statusBySurface.branches,
-					error: errorBySurface.branches,
-					view: branchView,
-					refresh,
-				}
-			: activeSurface === "milestones"
-				? {
-						surface: "milestones",
-						items: milestones,
-						selectedItem: selectedMilestone,
-						selectedIndex: milestoneIndex,
-						setSelectedIndex: setVisibleMilestoneIndex,
-						status: statusBySurface.milestones,
-						error: errorBySurface.milestones,
-						view: milestoneView,
-						refresh,
-					}
-				: activeSurface === "environments"
-					? {
-							surface: "environments",
-							items: environments,
-							selectedItem: selectedEnvironment,
-							selectedIndex: environmentIndex,
-							setSelectedIndex: setVisibleEnvironmentIndex,
-							status: statusBySurface.environments,
-							error: errorBySurface.environments,
-							view: environmentView,
-							refresh,
-						}
-					: {
-							surface: "runners",
-							items: runners,
-							selectedItem: selectedRunner,
-							selectedIndex: runnerIndex,
-							setSelectedIndex: setVisibleRunnerIndex,
-							status: statusBySurface.runners,
-							error: errorBySurface.runners,
-							view: runnerView,
-							refresh,
-						}
+	const activeDescriptor = isResource ? resourceDescriptors[activeSurface] : null
+	const active: ResourceSurfaceModel | null = activeDescriptor
+		? {
+				surface: activeSurface as ResourceSurfaceId,
+				items: activeDescriptor.items,
+				selectedItem: activeDescriptor.selectedItem,
+				selectedIndex: activeDescriptor.selectedIndex,
+				setSelectedIndex: activeDescriptor.setSelectedIndex,
+				status: statusBySurface[activeSurface as ResourceSurfaceId],
+				error: errorBySurface[activeSurface as ResourceSurfaceId],
+				view: activeDescriptor.view,
+				refresh,
+			}
+		: null
 
 	return {
 		active,

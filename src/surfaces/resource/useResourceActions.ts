@@ -3,7 +3,7 @@ import { registerHandoff } from "../../commands/handoffs.js"
 import type { MilestoneItem } from "../../domain.js"
 import { errorMessage } from "../../errors.js"
 import { branchDeleteDisabledReason, branchNameValidationError } from "../../services/github/branches.js"
-import type { DeleteResourceModalState, ResourceEditorField, ResourceEditorModalState } from "../../ui/modals/types.js"
+import type { DeleteResourceModalState, ResourceEditorModalState } from "../../ui/modals/types.js"
 import type { RepositoryResourcesModel } from "./useResourceSurfaces.js"
 
 type Setter<T> = (next: T | ((current: T) => T)) => void
@@ -42,11 +42,6 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 			branchName: "",
 			sourceIndex: defaultIndex,
 			sourceBranches: input.model.branches,
-			milestoneNumber: null,
-			title: "",
-			description: "",
-			dueOn: "",
-			state: "open",
 			focus: "name",
 			running: false,
 			error: null,
@@ -77,9 +72,6 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 			kind: "milestone",
 			mode: "create",
 			repository: input.repository,
-			branchName: "",
-			sourceIndex: 0,
-			sourceBranches: [],
 			milestoneNumber: null,
 			title: "",
 			description: "",
@@ -97,9 +89,6 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 			kind: "milestone",
 			mode: "edit",
 			repository: milestone.repository,
-			branchName: "",
-			sourceIndex: 0,
-			sourceBranches: [],
 			milestoneNumber: milestone.number,
 			title: milestone.title,
 			description: milestone.description,
@@ -162,7 +151,12 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 
 	const moveFocus = (delta: -1 | 1) =>
 		input.setEditor((current) => {
-			const available: readonly ResourceEditorField[] = current.kind === "branch" ? ["name", "source"] : ["title", "description", "dueOn", "state"]
+			if (current.kind === "branch") {
+				const available = ["name", "source"] as const
+				const index = Math.max(0, available.indexOf(current.focus))
+				return { ...current, focus: available[(index + delta + available.length) % available.length]! }
+			}
+			const available = ["title", "description", "dueOn", "state"] as const
 			const index = Math.max(0, available.indexOf(current.focus))
 			return { ...current, focus: available[(index + delta + available.length) % available.length]! }
 		})
@@ -180,7 +174,7 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 			const validation = branchNameValidationError(state.branchName)
 			const source = state.sourceBranches[state.sourceIndex]
 			if (validation || !source) {
-				input.setEditor((current) => ({ ...current, error: validation ?? "Select a source ref.", focus: validation ? "name" : "source" }))
+				input.setEditor((current) => (current.kind === "branch" ? { ...current, error: validation ?? "Select a source ref.", focus: validation ? "name" : "source" } : current))
 				return
 			}
 			input.setEditor((current) => ({ ...current, running: true, error: null }))
@@ -196,11 +190,15 @@ export const useResourceActions = (input: UseResourceActionsInput) => {
 		}
 		const dueOn = parseDueDate(state.dueOn)
 		if (!state.title.trim() || dueOn === undefined) {
-			input.setEditor((current) => ({
-				...current,
-				error: !state.title.trim() ? "Title is required." : "Due date must use YYYY-MM-DD.",
-				focus: !state.title.trim() ? "title" : "dueOn",
-			}))
+			input.setEditor((current) =>
+				current.kind === "milestone"
+					? {
+							...current,
+							error: !state.title.trim() ? "Title is required." : "Due date must use YYYY-MM-DD.",
+							focus: !state.title.trim() ? "title" : "dueOn",
+						}
+					: current,
+			)
 			return
 		}
 		input.setEditor((current) => ({ ...current, running: true, error: null }))

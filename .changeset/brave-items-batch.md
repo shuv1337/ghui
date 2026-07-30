@@ -1,5 +1,5 @@
 ---
-"@kitlangton/ghui": patch
+"@kitlangton/ghui": minor
 ---
 
 Complete Issue and Pull Request management with shared create and edit forms,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { formatSequence } from "@ghui/keymap"
 import { appKeymap } from "../src/keymap/all.ts"
-import { applyKeybindingOverrides, configuredShortcutFor, diagnoseKeybindingOverrides, keymapCommandAliases } from "../src/settings/keybindings.ts"
+import { applyKeybindingOverrides, configuredShortcutFor, diagnoseKeybindingOverrides, keymapCommandAliases, validateKeymapCommandAliases } from "../src/settings/keybindings.ts"
 import { applySurfaceView, normalizeSurfaceView, surfaceColumnSchemas } from "../src/settings/viewConfig.ts"
 
 describe("saved Surface views", () => {
@@ -58,6 +58,24 @@ describe("saved Surface views", () => {
 })
 
 describe("configurable keybindings", () => {
+	test("keeps shortcut commands and keymap aliases in sync", () => {
+		const probe = Bun.spawnSync({
+			cmd: [
+				process.execPath,
+				"-e",
+				'import { globalCommands } from "./src/commands/builtins.ts"; console.log(JSON.stringify(globalCommands.map(({ id, shortcut }) => ({ id, shortcut }))))',
+			],
+			cwd: new URL("..", import.meta.url).pathname,
+		})
+		if (probe.exitCode !== 0) throw new Error(new TextDecoder().decode(probe.stderr))
+		const commands = JSON.parse(new TextDecoder().decode(probe.stdout)) as readonly { readonly id: string; readonly shortcut?: string }[]
+		expect(validateKeymapCommandAliases(appKeymap, commands)).toEqual([])
+		expect(validateKeymapCommandAliases(appKeymap, [...commands, { id: "unmapped.probe", shortcut: "z" }])).toContainEqual({
+			commandId: "unmapped.probe",
+			message: "shortcut command has no keymap alias or explicit exclusion",
+		})
+	})
+
 	test("diagnoses invalid, reserved, colliding, ambiguous, and unknown bindings", () => {
 		const diagnostics = diagnoseKeybindingOverrides(
 			{

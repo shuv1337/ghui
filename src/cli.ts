@@ -51,6 +51,7 @@ export interface CliResult {
 }
 
 const commandNames = ["doctor", "cache", "open", "repos", "help", "version"] as const
+export const cliEntrypointIds = ["doctor", "cache.list", "cache.clean", "open", "repos"] as const
 
 export const cliHelp = (version: string) => `ghui ${version}
 

@@ -1,16 +1,6 @@
 import { Effect, Option, Schema, Stream } from "effect"
 import { config } from "../../config.js"
-import type {
-	CreateIssueInput,
-	CreatePullRequestInput,
-	EditIssueInput,
-	EditPullRequestInput,
-	IssueItem,
-	PullRequestItem,
-	RepositoryBranch,
-	RepositoryMilestone,
-	RepositoryUser,
-} from "../../domain.js"
+import type { CreateIssueInput, CreatePullRequestInput, EditIssueInput, EditPullRequestInput, IssueItem, PullRequestItem, RepositoryUser } from "../../domain.js"
 import { type ItemListInput, type ItemPage, searchQualifier } from "../../item.js"
 import { CommandError } from "../CommandRunner.js"
 import { itemPage, parseIssueSearchNode, parsePullRequestSummary } from "../githubNormalize.js"
@@ -20,14 +10,12 @@ import {
 	RawIssueSearchNodeSchema,
 	RawPullRequestSummaryNodeSchema,
 	RepositoryPullRequestsResponseSchema,
-	RepositoryBranchesResponseSchema,
-	RepositoryMilestonesResponseSchema,
 	RepositoryUsersResponseSchema,
 	repositoryPullRequestsQuery,
 	SearchResponseSchema,
 	type SearchResponse,
 } from "../githubSchemas.js"
-import type { GitHubClient, GitHubError } from "./client.js"
+import { flattenPages, type GitHubClient, type GitHubError } from "./client.js"
 
 const repositoryParts = (repository: string) => {
 	const [owner, name] = repository.split("/")
@@ -38,9 +26,6 @@ export const makeGitHubItems = (client: GitHubClient) => {
 	const repeatedFlag = (flag: string, values: readonly string[] | undefined): string[] => values?.flatMap((value) => [flag, value]) ?? []
 	const milestoneFlags = (milestone: string | null | undefined): string[] =>
 		milestone === undefined ? [] : milestone === null ? ["--remove-milestone"] : ["--milestone", milestone]
-	const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-		value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
-
 	const searchItemPage = <RawSchema extends Schema.Top, Item>(label: string, graphqlQuery: string, schema: RawSchema, parse: (node: RawSchema["Type"]) => Item) => {
 		const responseSchema = SearchResponseSchema(schema)
 		return <K extends "pullRequest" | "issue">(input: ItemListInput<K>) =>
@@ -234,23 +219,6 @@ export const makeGitHubItems = (client: GitHubClient) => {
 			.json("listReviewers", RepositoryUsersResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/collaborators?affiliation=all&permission=push&per_page=100`])
 			.pipe(Effect.map((pages): readonly RepositoryUser[] => flattenPages(pages).map((user) => ({ login: user.login, name: user.name ?? null }))))
 
-	const listMilestones = (repository: string) =>
-		client.json("listMilestones", RepositoryMilestonesResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/milestones?state=all&per_page=100`]).pipe(
-			Effect.map((pages): readonly RepositoryMilestone[] =>
-				flattenPages(pages).map((milestone) => ({
-					number: milestone.number,
-					title: milestone.title,
-					state: milestone.state.toLowerCase() === "closed" ? "closed" : "open",
-					dueOn: milestone.due_on ? new Date(milestone.due_on) : null,
-				})),
-			),
-		)
-
-	const listBranches = (repository: string) =>
-		client
-			.json("listBranches", RepositoryBranchesResponseSchema, ["api", "--paginate", "--slurp", `repos/${repository}/branches?per_page=100`])
-			.pipe(Effect.map((pages): readonly RepositoryBranch[] => flattenPages(pages).map((branch) => ({ name: branch.name, sha: branch.commit.sha, protected: branch.protected }))))
-
 	return {
 		listPullRequestPage,
 		listIssuePage,
@@ -266,7 +234,5 @@ export const makeGitHubItems = (client: GitHubClient) => {
 		approvePullRequest,
 		listAssignees,
 		listReviewers,
-		listMilestones,
-		listBranches,
 	} as const
 }

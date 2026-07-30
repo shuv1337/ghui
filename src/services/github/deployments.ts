@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import type { DeploymentItem, DeploymentState, EnvironmentItem } from "../../domain.js"
-import type { GitHubClient } from "./client.js"
+import { flattenPages, type GitHubClient } from "./client.js"
 
 const EnvironmentSchema = Schema.Struct({
 	id: Schema.Number,
@@ -29,8 +29,6 @@ const DeploymentStatusSchema = Schema.Struct({
 })
 const DeploymentStatusPagesSchema = Schema.Union([Schema.Array(DeploymentStatusSchema), Schema.Array(Schema.Array(DeploymentStatusSchema))])
 
-const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
 const normalizeState = (value: string | undefined): DeploymentState =>
 	value === "queued" || value === "in_progress" || value === "pending" || value === "success" || value === "failure" || value === "error" || value === "inactive"
 		? value

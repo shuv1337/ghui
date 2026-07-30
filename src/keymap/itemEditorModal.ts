@@ -13,8 +13,8 @@ const ItemEditor = context<ItemEditorModalCtx>()
 
 export const itemEditorModalKeymap = ItemEditor(
 	{ id: "item-editor.cancel", title: "Cancel item editor", keys: ["escape"], when: (state) => !state.state.running, run: (state) => state.close() },
-	{ id: "item-editor.next", title: "Next item field", keys: ["tab"], run: (state) => state.moveFocus(1) },
-	{ id: "item-editor.previous", title: "Previous item field", keys: ["shift+tab"], run: (state) => state.moveFocus(-1) },
+	{ id: "item-editor.next", title: "Next item field", keys: ["tab"], when: (state) => !state.state.running, run: (state) => state.moveFocus(1) },
+	{ id: "item-editor.previous", title: "Previous item field", keys: ["shift+tab"], when: (state) => !state.state.running, run: (state) => state.moveFocus(-1) },
 	{
 		id: "item-editor.toggle-draft",
 		title: "Toggle draft pull request",
@@ -22,5 +22,5 @@ export const itemEditorModalKeymap = ItemEditor(
 		when: (state) => !state.state.running && state.state.focus === "draft",
 		run: (state) => state.toggleDraft(),
 	},
-	{ id: "item-editor.submit", title: "Save item", keys: ["return"], run: (state) => state.submit() },
+	{ id: "item-editor.submit", title: "Save item", keys: ["return"], when: (state) => !state.state.running, run: (state) => state.submit() },
 )

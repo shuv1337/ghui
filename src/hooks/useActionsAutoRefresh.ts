@@ -1,7 +1,7 @@
 import { useEffect } from "react"
 import { useTerminalFocus } from "../ui/useTerminalFocus.js"
 
-interface RendererFocusEvents {
+export interface RendererFocusEvents {
 	on: (event: "focus" | "blur", handler: () => void) => void
 	off: (event: "focus" | "blur", handler: () => void) => void
 }

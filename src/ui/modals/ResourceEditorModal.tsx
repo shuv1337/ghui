@@ -29,7 +29,6 @@ export const ResourceEditorModal = ({
 }) => {
 	const { contentWidth } = standardModalDims(modalWidth, modalHeight)
 	const active = (field: ResourceEditorField) => state.focus === field
-	const source = state.sourceBranches[state.sourceIndex]
 	return (
 		<StandardModal
 			left={offsetLeft}
@@ -59,7 +58,16 @@ export const ResourceEditorModal = ({
 			{state.kind === "branch" ? (
 				<>
 					<Field label="name" value={state.branchName} active={active("name")} width={contentWidth} />
-					<Field label="source" value={source ? `${source.name} · ${source.sha.slice(0, 8)}` : "No source branches"} active={active("source")} width={contentWidth} />
+					<Field
+						label="source"
+						value={
+							state.sourceBranches[state.sourceIndex]
+								? `${state.sourceBranches[state.sourceIndex]!.name} · ${state.sourceBranches[state.sourceIndex]!.sha.slice(0, 8)}`
+								: "No source branches"
+						}
+						active={active("source")}
+						width={contentWidth}
+					/>
 				</>
 			) : (
 				<>

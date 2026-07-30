@@ -47,7 +47,7 @@
 		"dev": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOTEL_PORT=${GHUI_MOTEL_PORT:-27686} GHUI_DEBUG_LOG=${GHUI_DEBUG_LOG:-/tmp/ghui-debug.log} bun --watch src/index.tsx",
 		"dev:mock": "GHUI_FORCE_FULL_REPAINT_ON_START=1 GHUI_MOCK_PR_COUNT=200 GHUI_MOCK_REPO_COUNT=4 bun --watch src/index.tsx",
 		"start": "bun run src/index.tsx",
-		"test": "bun test test",
+		"test": "bun run dev/test.ts",
 		"test:keymap": "bun run --cwd=packages/keymap test",
 		"test:diff-highlighter-lifecycle": "bun test test/diffHighlighterLifecycle.test.ts",
 		"benchmark:diff": "bun run dev/diff-benchmark.ts",

@@ -3,6 +3,9 @@ import { CommandError, commandTelemetryAttributes, type CommandResult, type Json
 
 export type GitHubError = CommandError | JsonParseError | Schema.SchemaError
 
+export const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
+	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
+
 export interface CommandRunnerLike {
 	readonly run: (command: string, args: readonly string[], options?: RunOptions) => Effect.Effect<CommandResult, CommandError>
 	readonly runSchema: <S extends Schema.Top>(

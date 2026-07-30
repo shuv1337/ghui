@@ -1,16 +1,13 @@
 import { Effect, Schema } from "effect"
 import type { BranchItem, CreateBranchInput } from "../../domain.js"
 import { CommandError } from "../CommandRunner.js"
-import type { GitHubClient } from "./client.js"
+import { flattenPages, type GitHubClient } from "./client.js"
 
 const BranchPagesSchema = Schema.Union([
 	Schema.Array(Schema.Struct({ name: Schema.String, protected: Schema.Boolean, commit: Schema.Struct({ sha: Schema.String }) })),
 	Schema.Array(Schema.Array(Schema.Struct({ name: Schema.String, protected: Schema.Boolean, commit: Schema.Struct({ sha: Schema.String }) }))),
 ])
 const DefaultBranchSchema = Schema.Struct({ defaultBranchRef: Schema.NullOr(Schema.Struct({ name: Schema.String })) })
-
-const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
 
 export const branchNameValidationError = (name: string): string | null => {
 	const value = name.trim()

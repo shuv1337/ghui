@@ -19,12 +19,6 @@ import { computeHeaderDerivations, groupIndexAt } from "../workspace/headerDeriv
 import { useWorkspacePreferencesPersistence } from "../workspace/useWorkspacePreferencesPersistence.js"
 import { commentsRowCountAtom, orderedCommentsAtom, pullRequestCommentsAtom, pullRequestCommentsLoadedAtom, selectedOrderedCommentAtom } from "../ui/comments/atoms.js"
 import { useIssueSurface } from "../surfaces/issue/useIssueSurface.js"
-import { useReleaseSurface } from "../surfaces/release/useReleaseSurface.js"
-import { useReleaseActions } from "../surfaces/release/useReleaseActions.js"
-import { useResourceSurfaces } from "../surfaces/resource/useResourceSurfaces.js"
-import { useResourceActions } from "../surfaces/resource/useResourceActions.js"
-import { useNotificationSurface } from "../surfaces/notification/useNotificationSurface.js"
-import { useNotificationActions } from "../surfaces/notification/useNotificationActions.js"
 import { filterDraftAtom, filterModeAtom, filterQueryAtom } from "../ui/filter/atoms.js"
 import { selectedIndexAtom } from "../ui/listSelection/atoms.js"
 import { noticeAtom } from "../ui/notice/atoms.js"
@@ -39,9 +33,8 @@ import { useCommentsLoader } from "./useCommentsLoader.js"
 import { useCommentsViewActions } from "./useCommentsViewActions.js"
 import { useDiffLoader } from "./useDiffLoader.js"
 import { useRunsView } from "./useRunsView.js"
-import { useRepositoryActionsView } from "./useRepositoryActionsView.js"
-import { useActionsModalActions } from "./useActionsModalActions.js"
-import { useActionsAutoRefresh } from "./useActionsAutoRefresh.js"
+import { useParitySurfaces } from "./useParitySurfaces.js"
+import { useActionsSurfaceShell } from "./useActionsSurfaceShell.js"
 import { useLinkNavigation } from "./useLinkNavigation.js"
 import { useLoadingStatus } from "./useLoadingStatus.js"
 import { useCommandRegistry } from "./useCommandRegistry.js"
@@ -409,50 +402,23 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const refreshIssuesIfIdle = () => {
 		if (!issueFetchInFlight && !isLoadingMoreIssues) refreshIssues()
 	}
-	const releaseSurface = useReleaseSurface(selectedRepository, activeWorkspaceSurface)
-	const {
-		releases,
-		selectedRelease,
-		selectedReleaseIndex,
-		setSelectedReleaseIndex,
-		status: releaseStatus,
-		error: releaseError,
-		view: releaseView,
-		refresh: refreshReleases,
-		selectRelease,
-		createRelease,
-		editRelease,
-		deleteRelease,
-	} = releaseSurface
-	const releaseActions = useReleaseActions({
+	const { releaseSurface, releaseActions, resourcesView, resourceActions, notificationsView } = useParitySurfaces({
 		repository: selectedRepository,
-		selectedRelease,
-		editor: releaseEditorModal,
-		deletion: deleteReleaseModal,
-		setEditor: setReleaseEditorModal,
-		setDeletion: setDeleteReleaseModal,
-		closeModal: closeActiveModal,
-		createRelease,
-		editRelease,
-		deleteRelease,
-		refresh: refreshReleases,
-		selectRelease,
-		notify: flashNotice,
-	})
-	const resourcesView = useResourceSurfaces(selectedRepository, activeWorkspaceSurface)
-	const resourceActions = useResourceActions({
-		repository: selectedRepository,
-		model: resourcesView,
-		editor: resourceEditorModal,
-		deletion: deleteResourceModal,
-		setEditor: setResourceEditorModal,
-		setDeletion: setDeleteResourceModal,
+		activeSurface: activeWorkspaceSurface,
+		filterText: visibleFilterText,
+		releaseEditor: releaseEditorModal,
+		deleteRelease: deleteReleaseModal,
+		resourceEditor: resourceEditorModal,
+		deleteResource: deleteResourceModal,
+		setReleaseEditor: setReleaseEditorModal,
+		setDeleteRelease: setDeleteReleaseModal,
+		setResourceEditor: setResourceEditorModal,
+		setDeleteResource: setDeleteResourceModal,
 		closeModal: closeActiveModal,
 		notify: flashNotice,
 		openUrl,
 	})
-	const notificationsView = useNotificationSurface(activeWorkspaceSurface, visibleFilterText)
-	useNotificationActions(notificationsView, flashNotice, openUrl)
+	const { releases, selectedRelease, selectedReleaseIndex, setSelectedReleaseIndex, status: releaseStatus, error: releaseError, view: releaseView } = releaseSurface
 	const splitMetadata = (value: string): readonly string[] => [
 		...new Set(
 			value
@@ -1018,23 +984,20 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	const halfPage = Math.max(1, Math.floor(wideBodyHeight / 2))
 
 	const runsView = useRunsView(selectedPullRequest, halfPage)
-	const actionsView = useRepositoryActionsView(selectedRepository, halfPage, visibleFilterText)
-	useActionsAutoRefresh({
+	const { view: actionsView, modalActions: actionsModalActions } = useActionsSurfaceShell({
 		renderer,
+		repository: selectedRepository,
 		active: activeWorkspaceSurface === "actions",
-		hasVisibleInProgressRun: actionsView.hasVisibleInProgressRun,
-		onRefresh: actionsView.ctx.refresh,
-	})
-	const actionsModalActions = useActionsModalActions({
+		halfPage,
+		filterText: visibleFilterText,
 		runActionModal,
 		workflowDispatchModal,
 		artifactDownloadModal,
 		setRunActionModal,
 		setWorkflowDispatchModal,
 		setArtifactDownloadModal,
-		closeActiveModal,
-		refreshRuns: actionsView.ctx.refresh,
-		flashNotice,
+		closeModal: closeActiveModal,
+		notify: flashNotice,
 	})
 
 	const { loadPullRequestDiff } = useDiffLoader({

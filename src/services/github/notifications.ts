@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import type { NotificationItem, NotificationSubjectType } from "../../domain.js"
-import type { GitHubClient } from "./client.js"
+import { flattenPages, type GitHubClient } from "./client.js"
 
 const NotificationSchema = Schema.Struct({
 	id: Schema.String,
@@ -20,9 +20,6 @@ const NotificationSchema = Schema.Struct({
 	}),
 })
 const NotificationPagesSchema = Schema.Union([Schema.Array(NotificationSchema), Schema.Array(Schema.Array(NotificationSchema))])
-
-const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
 
 const subjectType = (value: string): NotificationSubjectType => {
 	switch (value.toLowerCase()) {

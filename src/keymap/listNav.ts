@@ -46,17 +46,28 @@ const environmentsActive = (s: ListNavCtx) => s.activeSurface === "environments"
 const notificationsActive = (s: ListNavCtx) => s.activeSurface === "notifications"
 const itemSurfaceActive = (s: ListNavCtx) => pullRequestsActive(s) || issuesActive(s)
 const surfaceAt = (s: ListNavCtx, index: number) => s.surfaces[index] ?? null
-const ordinalSurfaceCommandIds = ["workspace.first", "workspace.second", "workspace.third"] as const
-const ordinalSurfaceTitles = ["First surface", "Second surface", "Third surface"] as const
 const numericSurfaceBindings = workspaceSurfaceRegistry.slice(0, 9).map((descriptor, index) => ({
-	id: ordinalSurfaceCommandIds[index] ?? `workspace.${index + 1}`,
-	title: ordinalSurfaceTitles[index] ?? `${descriptor.label} position`,
+	id: `workspace.${descriptor.id}`,
+	title: `Go to ${descriptor.label}`,
 	keys: [`${index + 1}`],
 	run: (s: ListNavCtx) => {
 		const surface = surfaceAt(s, index)
 		if (surface) s.switchWorkspaceSurface(surface)
 	},
 }))
+const refreshBindings = workspaceSurfaceRegistry.flatMap((descriptor) =>
+	descriptor.refreshCommandId
+		? [
+				{
+					id: descriptor.refreshCommandId,
+					title: `Refresh ${descriptor.label}`,
+					keys: ["r"],
+					when: (s: ListNavCtx) => s.activeSurface === descriptor.id,
+					run: (s: ListNavCtx) => s.runCommandById(descriptor.refreshCommandId!),
+				},
+			]
+		: [],
+)
 const goHome = (s: ListNavCtx) => {
 	if (s.canGoUpWorkspace) s.goUpWorkspace()
 	else s.switchWorkspaceSurface("repos")
@@ -65,6 +76,7 @@ const goHome = (s: ListNavCtx) => {
 export const listNavKeymap = List(
 	// Single-key command shortcuts (delegate to existing AppCommand registry)
 	...numericSurfaceBindings,
+	...refreshBindings,
 	{ id: "workspace.next-tab", title: "Next surface", keys: ["tab"], run: (s) => s.cycleWorkspaceSurface(1) },
 	{ id: "workspace.prev-tab", title: "Previous surface", keys: ["shift+tab"], run: (s) => s.cycleWorkspaceSurface(-1) },
 	{ id: "workspace.go-home", title: "Go home", keys: ["g h"], run: goHome },
@@ -125,16 +137,6 @@ export const listNavKeymap = List(
 	{ id: "list.favorite-repo", title: "Favorite repository", keys: ["f"], when: reposActive, run: (s) => s.toggleFavoriteRepository() },
 	{ id: "list.scope-filter", title: "Filter items", keys: ["f"], when: filterableSurfaceActive, run: (s) => s.openFilterModal() },
 	{ id: "list.remove-repo", title: "Remove repository", keys: ["x"], when: reposActive, run: (s) => s.removeSelectedRepository() },
-	{
-		id: "list.refresh",
-		title: "Refresh",
-		keys: ["r"],
-		when: (s) => workspaceSurfaceDescriptor(s.activeSurface).refreshCommandId !== null,
-		run: (s) => {
-			const commandId = workspaceSurfaceDescriptor(s.activeSurface).refreshCommandId
-			if (commandId) s.runCommandById(commandId)
-		},
-	},
 	{ id: "list.theme", title: "Theme", keys: ["t"], run: (s) => s.runCommandById("theme.open") },
 	{ id: "list.configure-view", title: "Configure saved view", keys: ["v"], run: (s) => s.runCommandById("view.configure") },
 	{ id: "list.diff", title: "Open diff", keys: ["d"], when: pullRequestsActive, run: (s) => s.runCommandById("diff.open") },
@@ -176,14 +178,19 @@ export const listNavKeymap = List(
 
 	// Escape goes one level up: clear local filter first, otherwise leave repo scope.
 	{
-		id: "workspace.escape",
-		title: "Clear filter / go up workspace",
+		id: "filter.clear",
+		title: "Clear filter",
 		keys: ["escape"],
-		enabled: (s) => (s.hasFilter || s.canGoUpWorkspace ? true : "Already at top workspace."),
-		run: (s) => {
-			if (s.hasFilter) s.clearFilter()
-			else s.goUpWorkspace()
-		},
+		when: (s) => s.hasFilter,
+		run: (s) => s.clearFilter(),
+	},
+	{
+		id: "workspace.go-up",
+		title: "Go up workspace",
+		keys: ["escape"],
+		when: (s) => !s.hasFilter,
+		enabled: (s) => (s.canGoUpWorkspace ? true : "Already at top workspace."),
+		run: (s) => s.goUpWorkspace(),
 	},
 
 	// Wide-layout detail preview scroll

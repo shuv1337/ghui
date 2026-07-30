@@ -27,7 +27,7 @@ import {
 	ArtifactDownloadModal,
 	ThemeModal,
 } from "../ui/modals.js"
-import { Modal, type ModalTag } from "../ui/modals/types.js"
+import { Modal, type ModalTag, type ResourceEditorModalState } from "../ui/modals/types.js"
 
 export interface ModalLayout {
 	readonly width: number
@@ -116,7 +116,9 @@ export const WorkspaceModals = (props: WorkspaceModalsProps) =>
 		OpenRepository: (state) => <OpenRepositoryModal state={state} {...layoutToProps(props.layouts.OpenRepository)} />,
 		ReleaseEditor: (state) => <ReleaseEditorModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.ReleaseEditor)} />,
 		DeleteRelease: (state) => <DeleteReleaseModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.DeleteRelease)} />,
-		ResourceEditor: (state) => <ResourceEditorModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.ResourceEditor)} />,
+		ResourceEditor: (state) => (
+			<ResourceEditorModal state={state as unknown as ResourceEditorModalState} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.ResourceEditor)} />
+		),
 		DeleteResource: (state) => <DeleteResourceModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.DeleteResource)} />,
 		CommandPalette: (state) => (
 			<CommandPalette

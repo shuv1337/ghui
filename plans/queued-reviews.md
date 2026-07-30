@@ -6,7 +6,7 @@ Today, every inline diff comment posts immediately as a single-comment review. G
 
 ## What we'd ship
 
-1. **Per-comment choice in the diff comment modal** — `ctrl+q` switches between immediate post and server-backed queue; the modal always shows the active mode. `ctrl+g` switches between a comment and an exact GitHub suggestion block.
+1. **Per-comment choice in the diff comment modal** — the original design proposed `enter` for immediate post and `shift+enter` for queueing. The shipped interaction uses `ctrl+q` to switch between immediate post and the server-backed queue so `enter` remains an unambiguous submit action; the modal always shows the active mode. `ctrl+g` switches between a comment and an exact GitHub suggestion block.
 2. **Visible pending state in the diff view**:
    - A pending count in the diff pane header ("`3 pending`").
    - Pending anchors marked distinctly in the diff gutter (e.g. a different color or a `▎` bar) so they're scannable.
@@ -43,19 +43,19 @@ Because GitHub stores the draft, cross-session resume is free — open the same 
   - `"queue"` → ensure-pending-review-exists, then add the comment to it; insert into local pending list.
 - Submit-review modal (existing) reads the pending list and includes it in the submission flow.
 
-## Decisions
+## Open questions
 
-1. **Post is the safe default.** Queue mode is an explicit per-composer toggle and is not written to SQLite.
-2. **Pending review** is the user-facing name and the command id namespace is `review.*`.
-3. **Discard requires two deliberate `shift+d` presses** inside the queue pane.
-4. **Drafts are server-backed only.** Reopening a PR hydrates the viewer's existing GitHub pending review.
-5. **Server order is preserved.** Local optimistic insertion uses the same append order and converges on the returned server comment.
+All original questions are resolved:
 
-## Included in v1
+1. **Queue-by-default vs post-by-default:** post is the safe default. Queue mode is an explicit per-composer toggle and is not written to SQLite.
+2. **Pane name:** Pending review is the user-facing name and the command id namespace is `review.*`.
+3. **Discard guardrails:** discard requires two deliberate `shift+d` presses inside the queue pane.
+4. **Local-only vs server-mirrored draft:** drafts are server-backed only. Reopening a PR hydrates the viewer's existing GitHub pending review.
+5. **Order of comments:** server order is preserved. Local optimistic insertion uses the same append order and converges on the returned server comment.
 
-- Editing and deleting an individual queued comment.
-- Single-line, multiline, and empty-replacement suggestion blocks.
-- Cross-session resume of the viewer's server-side pending review.
+## Out of scope (for v1)
+
+The originally deferred editing/deletion, suggestion-block, and cross-session-resume work shipped in v1.
 
 Multi-reviewer queues remain out of scope: GitHub exposes one pending review for the authenticated viewer.
 

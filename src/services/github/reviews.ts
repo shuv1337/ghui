@@ -2,10 +2,7 @@ import { Effect } from "effect"
 import type { CreatePullRequestCommentInput, PendingReview, SubmitPullRequestReviewInput } from "../../domain.js"
 import { parsePullRequestComment, parsePullRequestComments } from "../githubNormalize.js"
 import { CommentsResponseSchema, PendingReviewSchema, PendingReviewsResponseSchema, PullRequestCommentSchema, ViewerSchema } from "../githubSchemas.js"
-import type { GitHubClient } from "./client.js"
-
-const flattenPages = <T>(value: readonly T[] | readonly (readonly T[])[]): readonly T[] =>
-	value.length > 0 && Array.isArray(value[0]) ? (value as readonly (readonly T[])[]).flat() : (value as readonly T[])
+import { flattenPages, type GitHubClient } from "./client.js"
 
 const reviewId = (id: string | number) => String(id)
 

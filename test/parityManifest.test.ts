@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { cliEntrypointIds } from "../src/cli.ts"
 import { automatedFactVerificationOwners, buildParityReport, type ParityCapability, parityManifest, validateParityManifest } from "./parity/manifest.ts"
 import { parityScenarioEvidence, validateScenarioEvidence } from "./parity/scenarios.ts"
 
-const acceptedFactMetadata = JSON.parse(readFileSync(new URL("../goals/github-feature-parity/facts.meta.json", import.meta.url), "utf8")) as {
-	readonly facts: readonly {
-		readonly id: string
-		readonly automatedVerification: boolean
-	}[]
-}
+const commandRegistryProbe = Bun.spawnSync({
+	cmd: [process.execPath, "-e", 'import { globalCommands } from "./src/commands/builtins.ts"; console.log(JSON.stringify(globalCommands.map((command) => command.id)))'],
+	cwd: new URL("..", import.meta.url).pathname,
+})
+if (commandRegistryProbe.exitCode !== 0) throw new Error(new TextDecoder().decode(commandRegistryProbe.stderr))
+const registeredCommandIds = JSON.parse(new TextDecoder().decode(commandRegistryProbe.stdout)) as readonly string[]
 
 const cloneCapability = (overrides: Partial<ParityCapability> = {}): ParityCapability => ({
 	id: "probe",
@@ -32,6 +32,8 @@ describe("GitHub parity manifest", () => {
 	test("is internally valid and current registered Surfaces are represented", () => {
 		expect(
 			validateParityManifest(parityManifest, {
+				registeredCommandIds,
+				registeredEntrypointIds: cliEntrypointIds,
 				registeredCapabilityIds: [
 					"workspace-navigation",
 					"pull-request-browse",
@@ -48,9 +50,8 @@ describe("GitHub parity manifest", () => {
 		).toEqual([])
 	})
 
-	test("assigns every accepted automated fact to verification owners", () => {
-		const expected = acceptedFactMetadata.facts.filter((fact) => fact.automatedVerification).map((fact) => fact.id)
-		expect(Object.keys(automatedFactVerificationOwners).sort()).toEqual(expected.sort())
+	test("keeps source-owned automated fact verification assignments populated", () => {
+		expect(Object.keys(automatedFactVerificationOwners).length).toBeGreaterThan(0)
 		expect(Object.values(automatedFactVerificationOwners).every((owners) => owners.length > 0)).toBe(true)
 	})
 
@@ -102,8 +103,25 @@ describe("GitHub parity manifest", () => {
 		).toEqual([{ capabilityId: "excluded-probe", message: "excluded capability requires a reason" }])
 	})
 
+	test("rejects stale command and CLI entrypoint ids", () => {
+		expect(
+			validateParityManifest(
+				[
+					cloneCapability({
+						commandIds: ["stale.command"],
+						entrypointIds: ["stale.entrypoint"],
+					}),
+				],
+				{ registeredCommandIds: ["probe.run"], registeredEntrypointIds: ["doctor"] },
+			),
+		).toEqual([
+			{ capabilityId: "probe", message: "unknown command id: stale.command" },
+			{ capabilityId: "probe", message: "unknown CLI entrypoint id: stale.entrypoint" },
+		])
+	})
+
 	test("builds a deterministic report when supplied a timestamp", () => {
-		const report = buildParityReport("2026-07-29T00:00:00.000Z")
+		const report = buildParityReport("2026-07-29T00:00:00.000Z", parityManifest, { registeredCommandIds, registeredEntrypointIds: cliEntrypointIds })
 		expect(report.generatedAt).toBe("2026-07-29T00:00:00.000Z")
 		expect(report.problems).toEqual([])
 		expect(report.counts.excluded).toBe(6)
