@@ -14,6 +14,42 @@ export interface JjChangeSummary {
 export interface JjWorkspaceSummary {
 	readonly name: string
 	readonly changeId: string
+	readonly root: string | null
+}
+
+export type LocalRemoteRelation =
+	| { readonly status: "exact"; readonly changeId: string; readonly commitId: string }
+	| { readonly status: "local-ahead"; readonly changeId: string; readonly remoteCommitId: string }
+	| { readonly status: "remote-ahead"; readonly changeId: string; readonly remoteCommitId: string }
+	| { readonly status: "diverged"; readonly changeId: string; readonly remoteCommitId: string }
+	| { readonly status: "conflicted"; readonly changeId: string }
+	| { readonly status: "needs-fetch"; readonly headCommitId: string }
+	| { readonly status: "unmapped"; readonly headCommitId: string }
+	| { readonly status: "ambiguous"; readonly candidates: readonly string[] }
+
+export interface ChangePrLink {
+	readonly storeId: string
+	readonly githubRepository: string
+	readonly prNumber: number
+	readonly changeId: string
+	readonly bookmark: string | null
+	readonly remoteName: string | null
+	readonly localCommitId: string
+	readonly githubHeadSha: string
+	readonly observedAt: string
+}
+
+export interface WorkspaceHandoffPlan {
+	readonly kind: "workspace-handoff"
+	readonly existing: boolean
+	readonly operationId: string
+	readonly storeRoot: string
+	readonly workspaceName: string
+	readonly destinationPath: string
+	readonly targetCommitId: string
+	readonly sourceChangeId: string
+	readonly currentWorkspaceName: string
+	readonly currentWorkingCopyChangeId: string
 }
 
 export interface WorkspaceSnapshot {
@@ -60,4 +96,95 @@ export const formatJjHeaderStatus = (snapshot: WorkspaceSnapshot, budget: number
 	while (segments.length > 1 && segments.join(" · ").length > budget) segments.pop()
 	const text = segments.join(" · ")
 	return text.length > budget ? text.slice(0, Math.max(0, budget)) : text
+}
+
+export const formatRelationBadge = (relation: LocalRemoteRelation): string | null => {
+	switch (relation.status) {
+		case "exact":
+			return "="
+		case "local-ahead":
+			return "↑"
+		case "remote-ahead":
+			return "↓"
+		case "diverged":
+			return "≠"
+		case "conflicted":
+			return "!"
+		case "needs-fetch":
+		case "ambiguous":
+			return "?"
+		case "unmapped":
+			return null
+	}
+}
+
+export const formatRelationExplanation = (relation: LocalRemoteRelation): string => {
+	switch (relation.status) {
+		case "exact":
+			return `local change ${shortChangeId(relation.changeId)} matches PR head ${shortCommitId(relation.commitId)}`
+		case "local-ahead":
+			return `local change ${shortChangeId(relation.changeId)} was rewritten\nremote head ${shortCommitId(relation.remoteCommitId)} -> local ahead`
+		case "remote-ahead":
+			return `remote head ${shortCommitId(relation.remoteCommitId)} is ahead of local change ${shortChangeId(relation.changeId)}`
+		case "diverged":
+			return `local change ${shortChangeId(relation.changeId)} diverged from remote head ${shortCommitId(relation.remoteCommitId)}`
+		case "conflicted":
+			return `local change ${shortChangeId(relation.changeId)} is conflicted`
+		case "needs-fetch":
+			return `PR head ${shortCommitId(relation.headCommitId)} is not present locally; fetch to relate`
+		case "unmapped":
+			return `PR head ${shortCommitId(relation.headCommitId)} has no local JJ relationship`
+		case "ambiguous":
+			return `PR head matches multiple local changes: ${relation.candidates.map(shortChangeId).join(" ")}`
+	}
+}
+
+const commitMatches = (change: JjChangeSummary, commitId: string): boolean => change.commitId === commitId
+
+const changeById = (stack: readonly JjChangeSummary[]): Map<string, JjChangeSummary> => new Map(stack.map((change) => [change.changeId, change]))
+
+const ancestorChangeIds = (stack: readonly JjChangeSummary[], startChangeId: string): Set<string> => {
+	const byId = changeById(stack)
+	const seen = new Set<string>()
+	const walk = (id: string) => {
+		if (seen.has(id)) return
+		seen.add(id)
+		const change = byId.get(id)
+		if (!change) return
+		for (const parent of change.parentChangeIds) walk(parent)
+	}
+	walk(startChangeId)
+	seen.delete(startChangeId)
+	return seen
+}
+
+const changeForCommit = (stack: readonly JjChangeSummary[], commitId: string): readonly JjChangeSummary[] => stack.filter((change) => commitMatches(change, commitId))
+
+export const relateFromSnapshot = (snapshot: WorkspaceSnapshot, headCommitId: string, persistedChangeId: string | null): LocalRemoteRelation => {
+	if (persistedChangeId) {
+		const change = snapshot.stack.find((candidate) => candidate.changeId === persistedChangeId) ?? null
+		if (!change) return { status: "unmapped", headCommitId }
+		if (change.divergent) return { status: "ambiguous", candidates: [change.changeId] }
+		if (change.conflicted) return { status: "conflicted", changeId: change.changeId }
+		if (commitMatches(change, headCommitId)) return { status: "exact", changeId: change.changeId, commitId: change.commitId }
+		const headChanges = changeForCommit(snapshot.stack, headCommitId)
+		if (headChanges.length === 1 && ancestorChangeIds(snapshot.stack, change.changeId).has(headChanges[0]!.changeId)) {
+			return { status: "local-ahead", changeId: change.changeId, remoteCommitId: headCommitId }
+		}
+		if (headChanges.length === 1 && ancestorChangeIds(snapshot.stack, headChanges[0]!.changeId).has(change.changeId)) {
+			return { status: "remote-ahead", changeId: change.changeId, remoteCommitId: headCommitId }
+		}
+		return { status: "diverged", changeId: change.changeId, remoteCommitId: headCommitId }
+	}
+
+	const exact = changeForCommit(snapshot.stack, headCommitId).filter((change) => !change.divergent)
+	if (exact.length === 1) {
+		const change = exact[0]!
+		if (change.conflicted) return { status: "conflicted", changeId: change.changeId }
+		return { status: "exact", changeId: change.changeId, commitId: change.commitId }
+	}
+	if (exact.length > 1) return { status: "ambiguous", candidates: exact.map((change) => change.changeId) }
+	const divergentMatches = changeForCommit(snapshot.stack, headCommitId).filter((change) => change.divergent)
+	if (divergentMatches.length > 0) return { status: "ambiguous", candidates: divergentMatches.map((change) => change.changeId) }
+	return { status: "unmapped", headCommitId }
 }

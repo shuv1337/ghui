@@ -1,17 +1,19 @@
 import { useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useCallback, useEffect } from "react"
 import type { LoadStatus } from "../../domain.js"
-import type { WorkspaceSnapshot } from "../../localDomain.js"
+import type { ChangePrLink, WorkspaceSnapshot } from "../../localDomain.js"
 import { useTerminalFocus } from "../../ui/useTerminalFocus.js"
 import { jjChangesSurfaceAvailable } from "../../workspace/jjAvailability.js"
 import { repositoryContext } from "../../services/runtime.js"
 import {
 	changeErrorAtom,
+	changePrLinksAtom,
 	changeRefreshGenerationAtom,
 	changeSelectionAtom,
 	changeSnapshotAtom,
 	changeStatusAtom,
 	describeChangeLoadError,
+	loadChangePrLinksAtom,
 	loadChangeSnapshotAtom,
 } from "./atoms.js"
 
@@ -23,6 +25,8 @@ export interface ChangesSurfaceModel {
 	readonly status: LoadStatus
 	readonly error: string | null
 	readonly refresh: (force?: boolean) => void
+	readonly links: readonly ChangePrLink[]
+	readonly relations?: Readonly<Record<string, import("../../localDomain.js").LocalRemoteRelation>>
 }
 
 export const useChangesSurface = (
@@ -34,8 +38,11 @@ export const useChangesSurface = (
 	const [status, setStatus] = useAtom(changeStatusAtom)
 	const [error, setError] = useAtom(changeErrorAtom)
 	const [selectedIndex, setSelectedIndex] = useAtom(changeSelectionAtom)
+	const [links, setLinks] = useAtom(changePrLinksAtom)
 	const refreshGeneration = useAtomValue(changeRefreshGenerationAtom)
 	const loadSnapshot = useAtomSet(loadChangeSnapshotAtom, { mode: "promise" })
+	const loadLinks = useAtomSet(loadChangePrLinksAtom, { mode: "promise" })
+	const storeId = repositoryContext.storeRoot ?? repositoryContext.workspaceRoot
 
 	const refresh = useCallback(
 		(force = false) => {
@@ -65,10 +72,20 @@ export const useChangesSurface = (
 		refresh(refreshGeneration > 0)
 	}, [available, refreshGeneration, selectedRepository])
 
+	useEffect(() => {
+		if (!available || !storeId || !selectedRepository) {
+			setLinks([])
+			return
+		}
+		void loadLinks({ storeId, repository: selectedRepository })
+			.then(setLinks)
+			.catch(() => setLinks([]))
+	}, [available, loadLinks, selectedRepository, setLinks, snapshot?.operationId, storeId])
+
 	useTerminalFocus({
 		renderer,
 		onFocusReturn: () => refresh(false),
 	})
 
-	return { available, snapshot, selectedIndex, setSelectedIndex, status, error, refresh }
+	return { available, snapshot, selectedIndex, setSelectedIndex, status, error, refresh, links }
 }

@@ -89,6 +89,7 @@ export interface PullRequestSurfaceProps {
 	readonly diffScrollRef: MutableRefObject<ScrollBoxRenderable | null>
 	readonly onLinkOpen?: (url: string) => void
 	readonly diffFilePanel: DiffFilePanelBundle
+	readonly localRelation?: import("../localDomain.js").LocalRemoteRelation | null
 }
 
 export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
@@ -156,6 +157,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 		diffScrollRef,
 		onLinkOpen,
 	} = props
+	const localRelation = props.localRelation ?? null
 
 	if (commentsViewActive && commentSubject) {
 		return (
@@ -293,6 +295,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 		return (
 			<box flexGrow={1} flexDirection="column">
 				<DetailHeader
+					localRelation={localRelation}
 					pullRequest={selectedPullRequest}
 					contentWidth={fullscreenContentWidth}
 					paneWidth={contentWidth}
@@ -312,6 +315,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 		return (
 			<box flexGrow={1} flexDirection="column">
 				<DetailHeader
+					localRelation={localRelation}
 					pullRequest={selectedPullRequest}
 					contentWidth={fullscreenContentWidth}
 					paneWidth={contentWidth}
@@ -338,6 +342,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				{selectedPullRequest ? (
 					<>
 						<DetailHeader
+							localRelation={localRelation}
 							pullRequest={selectedPullRequest}
 							contentWidth={fullscreenContentWidth}
 							paneWidth={contentWidth}
@@ -427,6 +432,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 					isSelectedPullRequestDetailError && selectedPullRequest ? (
 						<>
 							<DetailHeader
+								localRelation={localRelation}
 								pullRequest={selectedPullRequest}
 								contentWidth={rightContentWidth}
 								paneWidth={rightPaneWidth}
@@ -442,6 +448,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 					) : isSelectedPullRequestDetailLoading && selectedPullRequest ? (
 						<>
 							<DetailHeader
+								localRelation={localRelation}
 								pullRequest={selectedPullRequest}
 								contentWidth={rightContentWidth}
 								paneWidth={rightPaneWidth}
@@ -462,6 +469,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 					) : selectedPullRequest ? (
 						<>
 							<DetailHeader
+								localRelation={localRelation}
 								pullRequest={selectedPullRequest}
 								contentWidth={rightContentWidth}
 								paneWidth={rightPaneWidth}
@@ -497,6 +505,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				{isSelectedPullRequestDetailError && selectedPullRequest ? (
 					<>
 						<DetailHeader
+							localRelation={localRelation}
 							pullRequest={selectedPullRequest}
 							contentWidth={fullscreenContentWidth}
 							paneWidth={contentWidth}
@@ -512,6 +521,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				) : selectedPullRequest ? (
 					<>
 						<DetailHeader
+							localRelation={localRelation}
 							pullRequest={selectedPullRequest}
 							contentWidth={fullscreenContentWidth}
 							paneWidth={contentWidth}
@@ -567,6 +577,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				{isSelectedPullRequestDetailError && selectedPullRequest ? (
 					<box flexDirection="column">
 						<DetailHeader
+							localRelation={localRelation}
 							pullRequest={selectedPullRequest}
 							contentWidth={fullscreenContentWidth}
 							paneWidth={contentWidth}
@@ -581,6 +592,7 @@ export const PullRequestSurface = (props: PullRequestSurfaceProps) => {
 				) : selectedPullRequest ? (
 					<>
 						<DetailHeader
+							localRelation={localRelation}
 							pullRequest={selectedPullRequest}
 							contentWidth={fullscreenContentWidth}
 							paneWidth={contentWidth}

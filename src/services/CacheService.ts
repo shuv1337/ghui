@@ -27,6 +27,7 @@ import {
 	type RepositoryRunner,
 	type NotificationItem,
 } from "../domain.js"
+import type { ChangePrLink } from "../localDomain.js"
 import type { IssueLoad } from "../issueLoad.js"
 import { type IssueView, issueViewCacheKey } from "../issueViews.js"
 import { mergeCachedDetails } from "../pullRequestCache.js"
@@ -748,6 +749,22 @@ const cacheMigrations = {
 		)`
 		yield* sql`CREATE INDEX IF NOT EXISTS repository_resource_fetched_idx ON repository_resource_snapshots (fetched_at)`
 	}),
+	"009_change_pr_links": Effect.gen(function* () {
+		const sql = yield* SqlClient.SqlClient
+		yield* sql`CREATE TABLE IF NOT EXISTS change_pr_links (
+			store_id TEXT NOT NULL,
+			github_repository TEXT NOT NULL,
+			pr_number INTEGER NOT NULL,
+			change_id TEXT NOT NULL,
+			bookmark TEXT,
+			remote_name TEXT,
+			local_commit_id TEXT NOT NULL,
+			github_head_sha TEXT NOT NULL,
+			observed_at TEXT NOT NULL,
+			PRIMARY KEY (store_id, github_repository, pr_number)
+		)`
+		yield* sql`CREATE INDEX IF NOT EXISTS change_pr_links_change_idx ON change_pr_links (store_id, change_id)`
+	}),
 } satisfies Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>
 
 const pullRequestRow = (pullRequest: PullRequestItem, updatedAt = new Date().toISOString()) => ({
@@ -1354,6 +1371,92 @@ const liveCacheService = (sql: SqlClient.SqlClient) => {
 		yield* pruneSql(sql)
 	})
 
+	const readChangePrLink = (storeId: string, githubRepository: string, prNumber: number): Effect.Effect<ChangePrLink | null, CacheError> =>
+		Effect.gen(function* () {
+			const rows = yield* sql<{
+				readonly store_id: string
+				readonly github_repository: string
+				readonly pr_number: number
+				readonly change_id: string
+				readonly bookmark: string | null
+				readonly remote_name: string | null
+				readonly local_commit_id: string
+				readonly github_head_sha: string
+				readonly observed_at: string
+			}>`SELECT store_id, github_repository, pr_number, change_id, bookmark, remote_name, local_commit_id, github_head_sha, observed_at
+				FROM change_pr_links
+				WHERE store_id = ${storeId} AND github_repository = ${githubRepository} AND pr_number = ${prNumber}
+				LIMIT 1`
+			const row = rows[0]
+			if (!row) return null
+			return {
+				storeId: row.store_id,
+				githubRepository: row.github_repository,
+				prNumber: row.pr_number,
+				changeId: row.change_id,
+				bookmark: row.bookmark,
+				remoteName: row.remote_name,
+				localCommitId: row.local_commit_id,
+				githubHeadSha: row.github_head_sha,
+				observedAt: row.observed_at,
+			}
+		}).pipe(Effect.mapError((cause) => toCacheError("readChangePrLink", cause)))
+
+	const writeChangePrLink = (link: ChangePrLink): Effect.Effect<void, CacheError> =>
+		Effect.gen(function* () {
+			yield* sql`INSERT INTO change_pr_links ${sql.insert({
+				store_id: link.storeId,
+				github_repository: link.githubRepository,
+				pr_number: link.prNumber,
+				change_id: link.changeId,
+				bookmark: link.bookmark,
+				remote_name: link.remoteName,
+				local_commit_id: link.localCommitId,
+				github_head_sha: link.githubHeadSha,
+				observed_at: link.observedAt,
+			})}
+			ON CONFLICT(store_id, github_repository, pr_number) DO UPDATE SET
+				change_id = excluded.change_id,
+				bookmark = excluded.bookmark,
+				remote_name = excluded.remote_name,
+				local_commit_id = excluded.local_commit_id,
+				github_head_sha = excluded.github_head_sha,
+				observed_at = excluded.observed_at`
+		}).pipe(Effect.mapError((cause) => toCacheError("writeChangePrLink", cause)))
+
+	const deleteChangePrLink = (storeId: string, githubRepository: string, prNumber: number): Effect.Effect<void, CacheError> =>
+		Effect.gen(function* () {
+			yield* sql`DELETE FROM change_pr_links WHERE store_id = ${storeId} AND github_repository = ${githubRepository} AND pr_number = ${prNumber}`
+		}).pipe(Effect.mapError((cause) => toCacheError("deleteChangePrLink", cause)))
+
+	const listChangePrLinks = (storeId: string, githubRepository: string): Effect.Effect<readonly ChangePrLink[], CacheError> =>
+		Effect.gen(function* () {
+			const rows = yield* sql<{
+				readonly store_id: string
+				readonly github_repository: string
+				readonly pr_number: number
+				readonly change_id: string
+				readonly bookmark: string | null
+				readonly remote_name: string | null
+				readonly local_commit_id: string
+				readonly github_head_sha: string
+				readonly observed_at: string
+			}>`SELECT store_id, github_repository, pr_number, change_id, bookmark, remote_name, local_commit_id, github_head_sha, observed_at
+				FROM change_pr_links
+				WHERE store_id = ${storeId} AND github_repository = ${githubRepository}`
+			return rows.map((row) => ({
+				storeId: row.store_id,
+				githubRepository: row.github_repository,
+				prNumber: row.pr_number,
+				changeId: row.change_id,
+				bookmark: row.bookmark,
+				remoteName: row.remote_name,
+				localCommitId: row.local_commit_id,
+				githubHeadSha: row.github_head_sha,
+				observedAt: row.observed_at,
+			}))
+		}).pipe(Effect.mapError((cause) => toCacheError("listChangePrLinks", cause)))
+
 	return {
 		readQueue,
 		writeQueue,
@@ -1393,6 +1496,10 @@ const liveCacheService = (sql: SqlClient.SqlClient) => {
 		writeRepositoryDetails,
 		readWorkspacePreferences,
 		writeWorkspacePreferences,
+		readChangePrLink,
+		writeChangePrLink,
+		deleteChangePrLink,
+		listChangePrLinks,
 		prune,
 	}
 }
@@ -1438,6 +1545,10 @@ export class CacheService extends Context.Service<
 		readonly writeRepositoryDetails: (details: RepositoryDetails) => Effect.Effect<void>
 		readonly readWorkspacePreferences: (viewer: ViewerId) => Effect.Effect<WorkspacePreferences | null, CacheError>
 		readonly writeWorkspacePreferences: (preferences: WorkspacePreferencesInput | WorkspacePreferences) => Effect.Effect<void, CacheError>
+		readonly readChangePrLink: (storeId: string, githubRepository: string, prNumber: number) => Effect.Effect<ChangePrLink | null, CacheError>
+		readonly writeChangePrLink: (link: ChangePrLink) => Effect.Effect<void, CacheError>
+		readonly deleteChangePrLink: (storeId: string, githubRepository: string, prNumber: number) => Effect.Effect<void, CacheError>
+		readonly listChangePrLinks: (storeId: string, githubRepository: string) => Effect.Effect<readonly ChangePrLink[], CacheError>
 		readonly prune: () => Effect.Effect<void>
 	}
 >()("ghui/CacheService") {
@@ -1482,6 +1593,10 @@ export class CacheService extends Context.Service<
 			writeRepositoryDetails: () => Effect.void,
 			readWorkspacePreferences: () => Effect.succeed(null),
 			writeWorkspacePreferences: () => Effect.void,
+			readChangePrLink: () => Effect.succeed(null),
+			writeChangePrLink: () => Effect.void,
+			deleteChangePrLink: () => Effect.void,
+			listChangePrLinks: () => Effect.succeed([]),
 			prune: () => Effect.void,
 		}),
 	)

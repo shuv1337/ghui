@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { formatJjHeaderStatus, shortChangeId } from "../src/localDomain.ts"
+import { formatJjHeaderStatus, relateFromSnapshot, shortChangeId } from "../src/localDomain.ts"
 import {
 	assembleWorkspaceSnapshot,
 	decodeChangeLine,
@@ -121,6 +121,42 @@ describe("assembleWorkspaceSnapshot", () => {
 
 	test("parses NDJSON stacks", () => {
 		expect(parseNdjson(`${workingCopyJson}\n${trunkJson}\n`, decodeChangeLine)).toHaveLength(2)
+	})
+})
+
+describe("relateFromSnapshot", () => {
+	const snapshot = assembleWorkspaceSnapshot({
+		operationId: "op-rel",
+		workspaces: '{"name":"default","changeId":"c77246d8696ca9b6f2b30d6dbbca7df2","root":"/repo"}\n',
+		stack: `${workingCopyJson}\n${trunkJson}\n`,
+		workingCopy: `${workingCopyJson}\n`,
+		workspaceRoot: "/repo",
+		trunkRevision: "main@upstream",
+	})
+
+	test("maps an exact SHA to one visible change", () => {
+		const relation = relateFromSnapshot(snapshot, "9152f506d0690d058278c2190631b73a5c9475bc", null)
+		expect(relation).toEqual({ status: "exact", changeId: "c77246d8696ca9b6f2b30d6dbbca7df2", commitId: "9152f506d0690d058278c2190631b73a5c9475bc" })
+	})
+
+	test("preserves a linked change after rewrite instead of guessing", () => {
+		const rewritten = assembleWorkspaceSnapshot({
+			operationId: "op-rel-2",
+			workspaces: '{"name":"default","changeId":"c77246d8696ca9b6f2b30d6dbbca7df2","root":"/repo"}\n',
+			stack: `${JSON.stringify({ ...JSON.parse(workingCopyJson), commitId: "ffffffffffffffffffffffffffffffffffffffff" })}\n${trunkJson}\n`,
+			workingCopy: `${JSON.stringify({ ...JSON.parse(workingCopyJson), commitId: "ffffffffffffffffffffffffffffffffffffffff" })}\n`,
+			workspaceRoot: "/repo",
+			trunkRevision: "main@upstream",
+		})
+		expect(relateFromSnapshot(rewritten, "9152f506d0690d058278c2190631b73a5c9475bc", "c77246d8696ca9b6f2b30d6dbbca7df2").status).toBe("diverged")
+		expect(relateFromSnapshot(rewritten, "9152f506d0690d058278c2190631b73a5c9475bc", null).status).toBe("unmapped")
+	})
+
+	test("does not treat a missing commit as a bookmark match", () => {
+		expect(relateFromSnapshot(snapshot, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", null)).toEqual({
+			status: "unmapped",
+			headCommitId: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		})
 	})
 })
 

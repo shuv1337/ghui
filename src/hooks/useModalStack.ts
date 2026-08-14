@@ -19,6 +19,7 @@ import {
 	initialDeleteReleaseModalState,
 	initialResourceEditorModalState,
 	initialDeleteResourceModalState,
+	initialChangePlanModalState,
 	initialPullRequestStateModalState,
 	initialSubmitReviewModalState,
 	initialPendingReviewModalState,
@@ -42,6 +43,7 @@ import {
 	type DeleteReleaseModalState,
 	type ResourceEditorModalState,
 	type DeleteResourceModalState,
+	type ChangePlanModalState,
 	type PullRequestStateModalState,
 	type SubmitReviewModalState,
 	type PendingReviewModalState,
@@ -78,6 +80,7 @@ export interface ModalStack {
 	readonly deleteReleaseModalActive: boolean
 	readonly resourceEditorModalActive: boolean
 	readonly deleteResourceModalActive: boolean
+	readonly changePlanModalActive: boolean
 	readonly labelModal: LabelModalState
 	readonly closeModal: CloseModalState
 	readonly itemEditorModal: ItemEditorModalState
@@ -101,6 +104,7 @@ export interface ModalStack {
 	readonly deleteReleaseModal: DeleteReleaseModalState
 	readonly resourceEditorModal: ResourceEditorModalState
 	readonly deleteResourceModal: DeleteResourceModalState
+	readonly changePlanModal: ChangePlanModalState
 	readonly setLabelModal: ReturnType<typeof makeModalSetter<"Label">>
 	readonly setItemEditorModal: ReturnType<typeof makeModalSetter<"ItemEditor">>
 	readonly setMetadataSelectorModal: ReturnType<typeof makeModalSetter<"MetadataSelector">>
@@ -174,6 +178,7 @@ export const useModalStack = (): ModalStack => {
 	const deleteReleaseModalActive = Modal.$is("DeleteRelease")(activeModal)
 	const resourceEditorModalActive = Modal.$is("ResourceEditor")(activeModal)
 	const deleteResourceModalActive = Modal.$is("DeleteResource")(activeModal)
+	const changePlanModalActive = Modal.$is("ChangePlan")(activeModal)
 	return {
 		activeModal,
 		closeActiveModal,
@@ -201,6 +206,7 @@ export const useModalStack = (): ModalStack => {
 		deleteReleaseModalActive,
 		resourceEditorModalActive,
 		deleteResourceModalActive,
+		changePlanModalActive,
 		labelModal: labelModalActive ? activeModal : initialLabelModalState,
 		closeModal: closeModalActive ? activeModal : initialCloseModalState,
 		itemEditorModal: itemEditorModalActive ? activeModal : initialItemEditorModalState,
@@ -224,6 +230,7 @@ export const useModalStack = (): ModalStack => {
 		deleteReleaseModal: deleteReleaseModalActive ? activeModal : initialDeleteReleaseModalState,
 		resourceEditorModal: resourceEditorModalActive ? (activeModal as unknown as ResourceEditorModalState) : initialResourceEditorModalState,
 		deleteResourceModal: deleteResourceModalActive ? activeModal : initialDeleteResourceModalState,
+		changePlanModal: changePlanModalActive ? activeModal : initialChangePlanModalState,
 		setLabelModal: makeModalSetter(setActiveModal, "Label"),
 		setItemEditorModal: makeModalSetter(setActiveModal, "ItemEditor"),
 		setMetadataSelectorModal: makeModalSetter(setActiveModal, "MetadataSelector"),

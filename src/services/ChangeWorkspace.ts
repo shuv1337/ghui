@@ -1,5 +1,7 @@
+import { dirname, join } from "node:path"
 import { Context, Effect, Layer, Schema } from "effect"
-import type { JjChangeSummary, JjWorkspaceSummary, WorkspaceSnapshot } from "../localDomain.js"
+import type { JjChangeSummary, JjWorkspaceSummary, LocalRemoteRelation, WorkspaceHandoffPlan, WorkspaceSnapshot } from "../localDomain.js"
+import { relateFromSnapshot } from "../localDomain.js"
 import { CommandError, CommandRunner } from "./CommandRunner.js"
 import { jjObservationalArgs } from "./RepositoryContext.js"
 
@@ -33,11 +35,12 @@ const RawChangeSchema = Schema.Struct({
 const RawWorkspaceSchema = Schema.Struct({
 	name: Schema.String,
 	changeId: Schema.String,
+	root: Schema.optionalKey(Schema.String),
 })
 
 export const JJ_CHANGE_TEMPLATE_VERSION = 1
 export const JJ_CHANGE_TEMPLATE = `concat("{", '"changeId":', json(change_id.normal_hex()), ",", '"commitId":', json(commit_id.normal_hex()), ",", '"description":', json(description.first_line()), ",", '"empty":', json(empty), ",", '"conflicted":', json(conflict), ",", '"mutable":', json(!immutable), ",", '"divergent":', json(divergent), ",", '"bookmarks":', json(local_bookmarks), ",", '"remoteBookmarks":', json(remote_bookmarks), ",", '"parentChangeIds":', json(parents.map(|c| c.change_id().normal_hex())), "}\\n")`
-export const JJ_WORKSPACE_TEMPLATE = `concat("{", '"name":', json(name), ",", '"changeId":', json(target.change_id().normal_hex()), "}\\n")`
+export const JJ_WORKSPACE_TEMPLATE = `concat("{", '"name":', json(name), ",", '"changeId":', json(target.change_id().normal_hex()), ",", '"root":', json(root), "}\\n")`
 export const JJ_STACK_REVSET = "trunk()::@"
 export const JJ_WORKING_COPY_REVSET = "@"
 
@@ -69,7 +72,10 @@ export const decodeChangeLine = (value: unknown): JjChangeSummary => {
 	}
 }
 
-export const decodeWorkspaceLine = (value: unknown): JjWorkspaceSummary => Schema.decodeUnknownSync(RawWorkspaceSchema)(value)
+export const decodeWorkspaceLine = (value: unknown): JjWorkspaceSummary => {
+	const raw = Schema.decodeUnknownSync(RawWorkspaceSchema)(value)
+	return { name: raw.name, changeId: raw.changeId, root: raw.root ?? null }
+}
 
 export const jjRepoArgs = (workspaceRoot: string, ...subcommand: readonly string[]): readonly string[] => jjObservationalArgs("-R", workspaceRoot, ...subcommand)
 
@@ -110,27 +116,56 @@ export const assembleWorkspaceSnapshot = (output: SnapshotCommandOutput): Worksp
 	}
 }
 
+export interface RelateToGitHubInput {
+	readonly headCommitId: string
+	readonly persistedChangeId?: string | null
+	readonly snapshot?: WorkspaceSnapshot
+}
+
+export interface WorkspaceCreateIntent {
+	readonly intent: "workspace.create"
+	readonly name: string
+	readonly targetCommitId: string
+	readonly sourceChangeId: string
+	readonly destinationPath?: string
+}
+
+export interface WorkspaceOpenExistingIntent {
+	readonly intent: "workspace.open-existing"
+	readonly changeId: string
+}
+
+export type LocalIntent = WorkspaceCreateIntent | WorkspaceOpenExistingIntent
+
+const disabledError = (operation: string) =>
+	new ChangeWorkspaceError({
+		operation,
+		detail: "No Jujutsu workspace is connected",
+		cause: "disabled",
+	})
+
 export class ChangeWorkspace extends Context.Service<
 	ChangeWorkspace,
 	{
 		readonly snapshot: (scope?: ChangeWorkspaceScope) => Effect.Effect<WorkspaceSnapshot, ChangeWorkspaceError>
+		readonly relateToGitHub: (input: RelateToGitHubInput) => Effect.Effect<LocalRemoteRelation, ChangeWorkspaceError>
+		readonly fetch: () => Effect.Effect<WorkspaceSnapshot, ChangeWorkspaceError>
+		readonly plan: (intent: LocalIntent) => Effect.Effect<WorkspaceHandoffPlan, ChangeWorkspaceError>
+		readonly execute: (plan: WorkspaceHandoffPlan) => Effect.Effect<string, ChangeWorkspaceError>
 	}
 >()("ghui/ChangeWorkspace") {
 	static readonly disabledLayer = Layer.succeed(
 		ChangeWorkspace,
 		ChangeWorkspace.of({
-			snapshot: () =>
-				Effect.fail(
-					new ChangeWorkspaceError({
-						operation: "snapshot",
-						detail: "No Jujutsu workspace is connected",
-						cause: "disabled",
-					}),
-				),
+			snapshot: () => Effect.fail(disabledError("snapshot")),
+			relateToGitHub: () => Effect.fail(disabledError("relateToGitHub")),
+			fetch: () => Effect.fail(disabledError("fetch")),
+			plan: () => Effect.fail(disabledError("plan")),
+			execute: () => Effect.fail(disabledError("execute")),
 		}),
 	)
 
-	static readonly layer = (input: { readonly workspaceRoot: string; readonly trunkRevision: string }) =>
+	static readonly layer = (input: { readonly workspaceRoot: string; readonly trunkRevision: string; readonly storeRoot: string | null }) =>
 		Layer.effect(
 			ChangeWorkspace,
 			Effect.gen(function* () {
@@ -182,7 +217,111 @@ export class ChangeWorkspace extends Context.Service<
 						cached = next
 						return next
 					})
-				return ChangeWorkspace.of({ snapshot })
+				const relateToGitHub = (relateInput: RelateToGitHubInput) =>
+					Effect.gen(function* () {
+						const current = relateInput.snapshot ?? (yield* snapshot())
+						const observed = relateFromSnapshot(current, relateInput.headCommitId, relateInput.persistedChangeId ?? null)
+						if (observed.status !== "unmapped") return observed
+						const lookup = yield* runJj(
+							"relate",
+							jjRepoArgs(input.workspaceRoot, "log", "-r", `commit_id(exact:${relateInput.headCommitId})`, "--no-graph", "-T", JJ_CHANGE_TEMPLATE),
+						).pipe(Effect.catch(() => Effect.succeed("")))
+						const found = lookup.trim().length === 0 ? [] : parseNdjson(lookup, decodeChangeLine)
+						if (found.length === 0) return { status: "needs-fetch" as const, headCommitId: relateInput.headCommitId }
+						if (found.length > 1 || found.some((change) => change.divergent)) {
+							return { status: "ambiguous" as const, candidates: found.map((change) => change.changeId) }
+						}
+						const change = found[0]!
+						if (change.conflicted) return { status: "conflicted" as const, changeId: change.changeId }
+						return { status: "exact" as const, changeId: change.changeId, commitId: change.commitId }
+					})
+				const fetch = () =>
+					Effect.gen(function* () {
+						yield* runJj("fetch", jjRepoArgs(input.workspaceRoot, "git", "fetch"))
+						cached = null
+						return yield* snapshot({ force: true })
+					})
+				const plan = (intent: LocalIntent) =>
+					Effect.gen(function* () {
+						const current = yield* snapshot()
+						if (intent.intent === "workspace.open-existing") {
+							const workspace = current.workspaces.find((candidate) => candidate.changeId === intent.changeId)
+							if (!workspace?.root) {
+								return yield* new ChangeWorkspaceError({
+									operation: "plan",
+									detail: "No existing JJ workspace matches this change",
+									cause: "unmapped-workspace",
+								})
+							}
+							return {
+								kind: "workspace-handoff" as const,
+								existing: true,
+								operationId: current.operationId,
+								storeRoot: input.storeRoot ?? current.workspaceRoot,
+								workspaceName: workspace.name,
+								destinationPath: workspace.root,
+								targetCommitId: current.stack.find((change) => change.changeId === intent.changeId)?.commitId ?? current.workingCopy.commitId,
+								sourceChangeId: intent.changeId,
+								currentWorkspaceName: current.workspaceName,
+								currentWorkingCopyChangeId: current.workingCopy.changeId,
+							}
+						}
+						const destinationPath = intent.destinationPath ?? join(dirname(current.workspaceRoot), intent.name)
+						const collision = current.workspaces.some((workspace) => workspace.name === intent.name || workspace.root === destinationPath)
+						if (collision) {
+							return yield* new ChangeWorkspaceError({
+								operation: "plan",
+								detail: `Workspace name or path already exists: ${intent.name}`,
+								cause: "workspace-collision",
+							})
+						}
+						return {
+							kind: "workspace-handoff" as const,
+							existing: false,
+							operationId: current.operationId,
+							storeRoot: input.storeRoot ?? current.workspaceRoot,
+							workspaceName: intent.name,
+							destinationPath,
+							targetCommitId: intent.targetCommitId,
+							sourceChangeId: intent.sourceChangeId,
+							currentWorkspaceName: current.workspaceName,
+							currentWorkingCopyChangeId: current.workingCopy.changeId,
+						}
+					})
+				const execute = (handoff: WorkspaceHandoffPlan) =>
+					Effect.gen(function* () {
+						const current = yield* snapshot({ force: true })
+						if (current.operationId !== handoff.operationId) {
+							return yield* new ChangeWorkspaceError({
+								operation: "execute",
+								detail: "JJ operation changed; the workspace plan is stale",
+								cause: "stale-plan",
+							})
+						}
+						if (current.workingCopy.changeId !== handoff.currentWorkingCopyChangeId) {
+							return yield* new ChangeWorkspaceError({
+								operation: "execute",
+								detail: "Working-copy change changed; the workspace plan is stale",
+								cause: "stale-plan",
+							})
+						}
+						if (handoff.existing) return handoff.destinationPath
+						const nameTaken = current.workspaces.some((workspace) => workspace.name === handoff.workspaceName)
+						if (nameTaken) {
+							return yield* new ChangeWorkspaceError({
+								operation: "execute",
+								detail: `Workspace ${handoff.workspaceName} already exists`,
+								cause: "workspace-collision",
+							})
+						}
+						yield* runJj(
+							"workspace-add",
+							jjRepoArgs(input.workspaceRoot, "workspace", "add", "--name", handoff.workspaceName, "-r", handoff.targetCommitId, handoff.destinationPath),
+						)
+						cached = null
+						return handoff.destinationPath
+					})
+				return ChangeWorkspace.of({ snapshot, relateToGitHub, fetch, plan, execute })
 			}),
 		)
 }

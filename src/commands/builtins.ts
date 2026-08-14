@@ -43,7 +43,10 @@ import { lastBulkRetrySpecAtom, lastBulkRetryUrlsAtom, selectedItemUrlsAtom } fr
 import { selectedBranchAtom, selectedEnvironmentAtom, selectedMilestoneAtom } from "../surfaces/resource/atoms.js"
 import { notificationSelectedIdsAtom, selectedNotificationAtom } from "../surfaces/notification/atoms.js"
 import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
-import { changeRefreshGenerationAtom } from "../surfaces/changes/atoms.js"
+import { changeRefreshGenerationAtom, changeSelectionAtom, changeSnapshotAtom } from "../surfaces/changes/atoms.js"
+import { ChangeWorkspace } from "../services/ChangeWorkspace.js"
+import { repositoryContext } from "../services/runtime.js"
+import { relateFromSnapshot, shortChangeId, shortCommitId } from "../localDomain.js"
 import { type WorkspaceSurface, workspaceSurfaceRegistry } from "../workspaceSurfaces.js"
 import {
 	changeSurfaceReasonAtom,
@@ -1354,6 +1357,194 @@ export const globalCommands: readonly CommandDefinition[] = [
 		keywords: ["jj", "jujutsu", "stack"],
 		disabledReason: Atom.make((get) => (!get(workspaceTabSurfacesAtom).includes("changes") ? "Connect a Jujutsu workspace to use this surface." : null)),
 		run: switchWorkspaceSurfaceEffect("changes"),
+	}),
+	defineCommand({
+		id: "change.fetch",
+		title: "Fetch JJ remotes",
+		scope: "Changes",
+		keywords: ["jj", "git", "fetch"],
+		disabledReason: Atom.make((get) => (!get(workspaceTabSurfacesAtom).includes("changes") ? "Connect a Jujutsu workspace to use this surface." : null)),
+		run: Effect.gen(function* () {
+			yield* ChangeWorkspace.use((workspace) => workspace.fetch())
+			yield* Atom.update(changeRefreshGenerationAtom, (generation) => generation + 1)
+			yield* Atom.refresh(pullRequestsAtom)
+		}),
+	}),
+	defineCommand({
+		id: "change.link-pr",
+		title: "Link change to pull request",
+		scope: "Changes",
+		keywords: ["jj", "relate", "map"],
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			const snapshot = yield* Atom.get(changeSnapshotAtom)
+			if (!pullRequest || !snapshot) {
+				yield* Atom.set(noticeAtom, "Load a JJ snapshot and select a pull request first.")
+				return
+			}
+			const selectedChange = snapshot.stack[yield* Atom.get(changeSelectionAtom)] ?? snapshot.workingCopy
+			const observed = relateFromSnapshot(snapshot, pullRequest.headRefOid, null)
+			const change = observed.status === "exact" ? (snapshot.stack.find((candidate) => candidate.changeId === observed.changeId) ?? selectedChange) : selectedChange
+			const storeRoot = repositoryContext.storeRoot ?? snapshot.workspaceRoot
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ChangePlan({
+					kind: "link-pr",
+					title: `Link ${shortChangeId(change.changeId)} to #${pullRequest.number}`,
+					lines: [`Change ${shortChangeId(change.changeId)}`, `Commit ${shortCommitId(change.commitId)}`, `PR #${pullRequest.number} ${pullRequest.title}`],
+					confirmLabel: "link",
+					running: false,
+					error: null,
+					repository: pullRequest.repository,
+					prNumber: pullRequest.number,
+					changeId: change.changeId,
+					commitId: change.commitId,
+					workspaceName: null,
+					destinationPath: null,
+					existingWorkspace: false,
+					operationId: snapshot.operationId,
+					storeRoot,
+					currentWorkspaceName: snapshot.workspaceName,
+					currentWorkingCopyChangeId: snapshot.workingCopy.changeId,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "change.detach-pr",
+		title: "Detach change from pull request",
+		scope: "Changes",
+		keywords: ["jj", "unlink"],
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			const snapshot = yield* Atom.get(changeSnapshotAtom)
+			if (!pullRequest) return
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ChangePlan({
+					kind: "detach-pr",
+					title: `Detach #${pullRequest.number}`,
+					lines: [`Remove the stored JJ relationship for PR #${pullRequest.number}.`],
+					confirmLabel: "detach",
+					running: false,
+					error: null,
+					repository: pullRequest.repository,
+					prNumber: pullRequest.number,
+					changeId: null,
+					commitId: pullRequest.headRefOid,
+					workspaceName: null,
+					destinationPath: null,
+					existingWorkspace: false,
+					operationId: snapshot?.operationId ?? null,
+					storeRoot: repositoryContext.storeRoot ?? snapshot?.workspaceRoot ?? null,
+					currentWorkspaceName: snapshot?.workspaceName ?? null,
+					currentWorkingCopyChangeId: snapshot?.workingCopy.changeId ?? null,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "pull.open-jj-workspace",
+		title: "Open PR in JJ workspace",
+		scope: "Pull request",
+		keywords: ["jj", "workspace", "editor"],
+		disabledReason: noPullRequestReasonAtom,
+		run: Effect.gen(function* () {
+			const pullRequest = yield* Atom.get(selectedPullRequestAtom)
+			const snapshot = yield* Atom.get(changeSnapshotAtom)
+			if (!pullRequest || !snapshot) {
+				yield* Atom.set(noticeAtom, "A connected JJ workspace is required.")
+				return
+			}
+			const observed = relateFromSnapshot(snapshot, pullRequest.headRefOid, null)
+			const changeId = "changeId" in observed ? observed.changeId : snapshot.workingCopy.changeId
+			const existing = snapshot.workspaces.find((workspace) => workspace.changeId === changeId)
+			const workspace = yield* ChangeWorkspace
+			const handoff = existing
+				? yield* workspace.plan({ intent: "workspace.open-existing", changeId })
+				: yield* workspace.plan({
+						intent: "workspace.create",
+						name: `pr-${pullRequest.number}`,
+						targetCommitId: pullRequest.headRefOid,
+						sourceChangeId: changeId,
+					})
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ChangePlan({
+					kind: "workspace-handoff",
+					title: existing ? `Open workspace ${handoff.workspaceName}` : `Create workspace ${handoff.workspaceName}`,
+					lines: [
+						`Name ${handoff.workspaceName}`,
+						`Path ${handoff.destinationPath}`,
+						`Commit ${shortCommitId(handoff.targetCommitId)}`,
+						existing ? "Existing workspace" : "Creates a sibling workspace; current working copy stays put",
+					],
+					confirmLabel: existing ? "open" : "create",
+					running: false,
+					error: null,
+					repository: pullRequest.repository,
+					prNumber: pullRequest.number,
+					changeId: handoff.sourceChangeId,
+					commitId: handoff.targetCommitId,
+					workspaceName: handoff.workspaceName,
+					destinationPath: handoff.destinationPath,
+					existingWorkspace: handoff.existing,
+					operationId: handoff.operationId,
+					storeRoot: handoff.storeRoot,
+					currentWorkspaceName: handoff.currentWorkspaceName,
+					currentWorkingCopyChangeId: handoff.currentWorkingCopyChangeId,
+				}),
+			)
+		}),
+	}),
+	defineCommand({
+		id: "change.open-editor",
+		title: "Open change in editor",
+		scope: "Changes",
+		keywords: ["jj", "editor", "workspace"],
+		disabledReason: Atom.make((get) => (!get(workspaceTabSurfacesAtom).includes("changes") ? "Connect a Jujutsu workspace to use this surface." : null)),
+		run: Effect.gen(function* () {
+			const snapshot = yield* Atom.get(changeSnapshotAtom)
+			if (!snapshot) {
+				yield* Atom.set(noticeAtom, "Load local changes first.")
+				return
+			}
+			const change = snapshot.stack[yield* Atom.get(changeSelectionAtom)] ?? snapshot.workingCopy
+			const existing = snapshot.workspaces.find((workspace) => workspace.changeId === change.changeId)
+			const workspace = yield* ChangeWorkspace
+			const handoff = existing
+				? yield* workspace.plan({ intent: "workspace.open-existing", changeId: change.changeId })
+				: yield* workspace.plan({
+						intent: "workspace.create",
+						name: `change-${change.changeId.slice(0, 8)}`,
+						targetCommitId: change.commitId,
+						sourceChangeId: change.changeId,
+					})
+			yield* Atom.set(
+				activeModalAtom,
+				Modal.ChangePlan({
+					kind: "workspace-handoff",
+					title: existing ? `Open workspace ${handoff.workspaceName}` : `Create workspace ${handoff.workspaceName}`,
+					lines: [`Name ${handoff.workspaceName}`, `Path ${handoff.destinationPath}`, `Change ${shortChangeId(change.changeId)}`],
+					confirmLabel: existing ? "open" : "create",
+					running: false,
+					error: null,
+					repository: repositoryContext.githubRepository ?? "",
+					prNumber: null,
+					changeId: handoff.sourceChangeId,
+					commitId: handoff.targetCommitId,
+					workspaceName: handoff.workspaceName,
+					destinationPath: handoff.destinationPath,
+					existingWorkspace: handoff.existing,
+					operationId: handoff.operationId,
+					storeRoot: handoff.storeRoot,
+					currentWorkspaceName: handoff.currentWorkspaceName,
+					currentWorkingCopyChangeId: handoff.currentWorkingCopyChangeId,
+				}),
+			)
+		}),
 	}),
 	defineCommand({
 		id: "branch.refresh",

@@ -1,13 +1,16 @@
 import { RegistryContext, useAtom, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { useRenderer, useTerminalDimensions } from "@opentui/react"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
-import { useContext, useEffect, useRef, useState } from "react"
+import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import type { AppCommand } from "../commands.js"
 import { parseRepositoryInput } from "../pullRequestViews.js"
 import { errorMessage } from "../errors.js"
 
 import { colors } from "../ui/colors.js"
 import { workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
+import { activeModalAtom } from "../ui/modals/atoms.js"
+import { Modal } from "../ui/modals/types.js"
+import { deleteChangePrLinkAtom, executeChangePlanAtom, openEditorPathAtom, writeChangePrLinkAtom } from "../surfaces/changes/atoms.js"
 import { useRepoSurface } from "../surfaces/repo/useRepoSurface.js"
 import { usePullRequestSurface } from "../surfaces/pullRequest/usePullRequestSurface.js"
 import { computeLayout, diffFilePanelWidthFor, isTerminalTooSmall } from "../workspace/layout.js"
@@ -81,7 +84,7 @@ import { useItemModalActions } from "../item/useItemModalActions.js"
 import { workspaceSurfaceLabelFor, type WorkspaceSurface } from "../workspaceSurfaces.js"
 import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath, repositoryContext } from "../services/runtime.js"
 import { useChangesSurface } from "../surfaces/changes/useChangesSurface.js"
-import { formatJjHeaderStatus } from "../localDomain.js"
+import { formatJjHeaderStatus, relateFromSnapshot } from "../localDomain.js"
 import { jjLocalStateConnected } from "../workspace/jjAvailability.js"
 
 export interface UseAppShellInput {
@@ -423,6 +426,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 	})
 	const { releases, selectedRelease, selectedReleaseIndex, setSelectedReleaseIndex, status: releaseStatus, error: releaseError, view: releaseView } = releaseSurface
 	const changesView = useChangesSurface(selectedRepository, renderer)
+	const changeRelations = useMemo(() => {
+		if (!changesView.snapshot) return {}
+		const byNumber = new Map(changesView.links.map((link) => [link.prNumber, link.changeId]))
+		return Object.fromEntries(
+			visiblePullRequests.map((pullRequest) => [pullRequest.url, relateFromSnapshot(changesView.snapshot!, pullRequest.headRefOid, byNumber.get(pullRequest.number) ?? null)]),
+		)
+	}, [changesView.links, changesView.snapshot, visiblePullRequests])
 	const splitMetadata = (value: string): readonly string[] => [
 		...new Set(
 			value
@@ -1464,6 +1474,79 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			setSelectedChangeIndex: changesView.setSelectedIndex,
 			setSelectedNotificationIndex: notificationsView.setSelectedIndex,
 		})
+	const setActiveModal = useAtomSet(activeModalAtom)
+	const writeChangePrLink = useAtomSet(writeChangePrLinkAtom, { mode: "promise" })
+	const deleteChangePrLink = useAtomSet(deleteChangePrLinkAtom, { mode: "promise" })
+	const executeChangePlan = useAtomSet(executeChangePlanAtom, { mode: "promise" })
+	const openEditorPath = useAtomSet(openEditorPathAtom, { mode: "promise" })
+	const confirmChangePlan = () => {
+		if (activeModal._tag !== "ChangePlan" || activeModal.running) return
+		const plan = activeModal
+		setActiveModal(Modal.ChangePlan({ ...plan, running: true, error: null }))
+		const finish = (error?: string) => {
+			if (error) setActiveModal(Modal.ChangePlan({ ...plan, running: false, error }))
+			else {
+				closeActiveModal()
+				changesView.refresh(true)
+			}
+		}
+		void (async () => {
+			try {
+				if (plan.kind === "link-pr" && plan.changeId && plan.commitId && plan.prNumber !== null && plan.storeRoot) {
+					await writeChangePrLink({
+						storeId: plan.storeRoot,
+						githubRepository: plan.repository,
+						prNumber: plan.prNumber,
+						changeId: plan.changeId,
+						bookmark: null,
+						remoteName: null,
+						localCommitId: plan.commitId,
+						githubHeadSha: plan.commitId,
+						observedAt: new Date().toISOString(),
+					})
+					flashNotice(`Linked change ${plan.changeId.slice(0, 8)} to PR #${plan.prNumber}`)
+					finish()
+					return
+				}
+				if (plan.kind === "detach-pr" && plan.prNumber !== null && plan.storeRoot) {
+					await deleteChangePrLink({ storeId: plan.storeRoot, repository: plan.repository, prNumber: plan.prNumber })
+					flashNotice(`Detached PR #${plan.prNumber}`)
+					finish()
+					return
+				}
+				if (
+					plan.kind === "workspace-handoff" &&
+					plan.destinationPath &&
+					plan.workspaceName &&
+					plan.operationId &&
+					plan.changeId &&
+					plan.commitId &&
+					plan.currentWorkingCopyChangeId &&
+					plan.currentWorkspaceName
+				) {
+					const path = await executeChangePlan({
+						kind: "workspace-handoff",
+						existing: plan.existingWorkspace,
+						operationId: plan.operationId,
+						storeRoot: plan.storeRoot ?? "",
+						workspaceName: plan.workspaceName,
+						destinationPath: plan.destinationPath,
+						targetCommitId: plan.commitId,
+						sourceChangeId: plan.changeId,
+						currentWorkspaceName: plan.currentWorkspaceName,
+						currentWorkingCopyChangeId: plan.currentWorkingCopyChangeId,
+					})
+					await openEditorPath({ path })
+					flashNotice(`Opened ${plan.existingWorkspace ? "workspace" : "new workspace"} ${plan.workspaceName}`)
+					finish()
+					return
+				}
+				finish("Nothing to confirm")
+			} catch (cause) {
+				finish(errorMessage(cause))
+			}
+		})()
+	}
 	const handleQuitOrClose = () => {
 		if (themeModalActive) {
 			closeThemeModal(false)
@@ -1497,6 +1580,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		commandPaletteActive,
 		releaseEditorModalActive,
 		deleteReleaseModalActive,
+		changePlanModalActive: activeModal._tag === "ChangePlan",
 		resourceEditorModalActive: activeModal._tag === "ResourceEditor",
 		deleteResourceModalActive: activeModal._tag === "DeleteResource",
 		runActionModalActive,
@@ -1517,6 +1601,8 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		metadataSelectorModal,
 		bulkEditorModal,
 		deleteReleaseModalRunning: deleteReleaseModal.running,
+		changePlanModalRunning: activeModal._tag === "ChangePlan" && activeModal.running,
+		confirmChangePlan,
 		runActionModal,
 		workflowDispatchModal,
 		artifactDownloadModal,
@@ -1826,7 +1912,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			actionsView,
 			resourcesView,
 			notificationsView,
-			changesView,
+			changesView: { ...changesView, relations: changeRelations },
 			detailFullView,
 			layout,
 			derivations,

@@ -47,6 +47,7 @@ export interface UseAppKeymapInput {
 	readonly commandPaletteActive: boolean
 	readonly releaseEditorModalActive: boolean
 	readonly deleteReleaseModalActive: boolean
+	readonly changePlanModalActive: boolean
 	readonly runActionModalActive: boolean
 	readonly workflowDispatchModalActive: boolean
 	readonly artifactDownloadModalActive: boolean
@@ -68,6 +69,8 @@ export interface UseAppKeymapInput {
 	readonly metadataSelectorModal: MetadataSelectorModalState
 	readonly bulkEditorModal: BulkEditorModalState
 	readonly deleteReleaseModalRunning: boolean
+	readonly changePlanModalRunning: boolean
+	readonly confirmChangePlan: () => void
 	readonly runActionModal: RunActionModalState
 	readonly workflowDispatchModal: WorkflowDispatchModalState
 	readonly artifactDownloadModal: ArtifactDownloadModalState
@@ -275,6 +278,7 @@ export const useAppKeymap = (i: UseAppKeymapInput): void => {
 				commandPaletteActive: i.commandPaletteActive,
 				releaseEditorModalActive: i.releaseEditorModalActive || i.resourceEditorModalActive,
 				deleteReleaseModalActive: i.deleteReleaseModalActive || i.deleteResourceModalActive,
+				changePlanModalActive: i.changePlanModalActive,
 				actionsModalActive: i.runActionModalActive || i.workflowDispatchModalActive || i.artifactDownloadModalActive,
 				filterMode: i.filterMode,
 				diffFullView: i.diffFullView,
@@ -404,6 +408,11 @@ export const useAppKeymap = (i: UseAppKeymapInput): void => {
 				running: i.deleteResourceModalActive ? i.deleteResourceModalRunning : i.deleteReleaseModalRunning,
 				close: i.closeActiveModal,
 				confirm: i.deleteResourceModalActive ? i.confirmDeleteResource : i.confirmDeleteRelease,
+			},
+			changePlanModal: {
+				running: i.changePlanModalRunning,
+				close: i.closeActiveModal,
+				confirm: i.confirmChangePlan,
 			},
 			actionsModal: {
 				mode: i.runActionModalActive ? "runAction" : i.workflowDispatchModalActive ? "dispatch" : "artifact",

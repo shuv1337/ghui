@@ -19,6 +19,7 @@ export { ReleaseEditorModal } from "./modals/ReleaseEditorModal.js"
 export { DeleteReleaseModal } from "./modals/DeleteReleaseModal.js"
 export { ResourceEditorModal } from "./modals/ResourceEditorModal.js"
 export { DeleteResourceModal } from "./modals/DeleteResourceModal.js"
+export { ChangePlanModal } from "./modals/ChangePlanModal.js"
 export { SubmitReviewModal } from "./modals/SubmitReviewModal.js"
 export { PendingReviewModal } from "./modals/PendingReviewModal.js"
 export { RunActionModal } from "./modals/RunActionModal.js"
@@ -57,6 +58,7 @@ export type {
 	ResourceEditorField,
 	ResourceEditorModalState,
 	DeleteResourceModalState,
+	ChangePlanModalState,
 	PullRequestStateModalState,
 	SubmitReviewModalState,
 	PendingReviewModalState,

@@ -2,8 +2,8 @@
 
 ## Status
 
-In progress — Milestones 0 and 1 landed in this working copy. Remote merge
-safety and Milestones 2+ are not started.
+In progress — Milestones 0–3 landed. Remote merge safety and Milestones 4+
+are not started.
 
 ## Why
 
@@ -763,8 +763,18 @@ GitHub-only behavior change and needs its own changeset.
 
 **Done when**
 
-- PRs explain their local JJ relationship without changing any GitHub behavior.
-- A relation failure never blocks review, comments, checks, Actions, or merge.
+- [x] PRs explain their local JJ relationship without changing any GitHub behavior.
+- [x] A relation failure never blocks review, comments, checks, Actions, or merge.
+
+**Implementation notes**
+
+- List badges come from `relateFromSnapshot` only. Missing SHAs stay
+  `unmapped` until `ChangeWorkspace.relateToGitHub` looks the commit up for
+  details/handoff. Bookmarks are never used as a join key.
+- Links persist in `change_pr_links` after explicit confirmation. Passive
+  browsing never writes.
+- `change.fetch` is the only automatic remote observation path besides
+  publication (later).
 
 ### Milestone 3 - JJ workspace editor handoff
 
@@ -814,8 +824,18 @@ GitHub-only behavior change and needs its own changeset.
 
 **Done when**
 
-- A JJ user can inspect a local or fetched PR in an editor without checkout
+- [x] A JJ user can inspect a local or fetched PR in an editor without checkout
   semantics or disruption of current work.
+
+**Implementation notes**
+
+- `pull.open-jj-workspace` and `change.open-editor` preview a
+  `WorkspaceHandoffPlan` in the ChangePlan modal. Execute rechecks the JJ
+  operation and working-copy change, then either opens an existing workspace
+  path or runs `jj workspace add --name … -r <commit> <path>`.
+- `EditorOpener.openPath` launches the editor after plan execution. Existing
+  `e` / `pull.open-editor` templates are unchanged. `gh pr checkout` is
+  documented as Git-specific.
 
 ### Milestone 4 - Publish change and create/update PR
 

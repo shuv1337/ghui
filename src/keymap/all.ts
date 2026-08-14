@@ -10,6 +10,7 @@ import { commentThreadModalKeymap, type CommentThreadModalCtx } from "./commentT
 import { deleteCommentModalKeymap, type DeleteCommentModalCtx } from "./deleteCommentModal.ts"
 import { detailViewKeymap, type DetailViewCtx } from "./detailView.ts"
 import { deleteReleaseModalKeymap, type DeleteReleaseModalCtx } from "./deleteReleaseModal.ts"
+import { changePlanModalKeymap, type ChangePlanModalCtx } from "./changePlanModal.ts"
 import { diffViewKeymap, type DiffViewCtx } from "./diffView.ts"
 import { filterModalKeymap, type FilterModalCtx } from "./filterModal.ts"
 import { filterModeKeymap, type FilterModeCtx } from "./filterMode.ts"
@@ -47,6 +48,7 @@ export interface AppCtx {
 	readonly commandPaletteActive: boolean
 	readonly releaseEditorModalActive: boolean
 	readonly deleteReleaseModalActive: boolean
+	readonly changePlanModalActive: boolean
 	readonly actionsModalActive: boolean
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
@@ -78,6 +80,7 @@ export interface AppCtx {
 	readonly commandPalette: CommandPaletteCtx
 	readonly releaseEditorModal: ReleaseEditorModalCtx
 	readonly deleteReleaseModal: DeleteReleaseModalCtx
+	readonly changePlanModal: ChangePlanModalCtx
 	readonly actionsModal: ActionsModalCtx
 	readonly filterModeCtx: FilterModeCtx
 	readonly diff: DiffViewCtx
@@ -113,6 +116,7 @@ const modalActive = (a: AppCtx): boolean =>
 	a.commandPaletteActive ||
 	a.releaseEditorModalActive ||
 	a.deleteReleaseModalActive ||
+	a.changePlanModalActive ||
 	a.actionsModalActive
 
 const inListMode = (a: AppCtx): boolean => !modalActive(a) && !a.filterMode && !a.diffFullView && !a.runsFullView && !a.detailFullView && !a.commentsViewActive
@@ -156,6 +160,7 @@ export const appKeymap = App(
 	commandPaletteKeymap.scope((a) => a.commandPaletteActive && a.commandPalette),
 	releaseEditorModalKeymap.scope((a) => a.releaseEditorModalActive && a.releaseEditorModal),
 	deleteReleaseModalKeymap.scope((a) => a.deleteReleaseModalActive && a.deleteReleaseModal),
+	changePlanModalKeymap.scope((a) => a.changePlanModalActive && a.changePlanModal),
 	actionsModalKeymap.scope((a) => a.actionsModalActive && a.actionsModal),
 	filterModeKeymap.scope((a) => a.filterMode && a.filterModeCtx),
 

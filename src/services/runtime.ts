@@ -73,6 +73,7 @@ const changeWorkspaceLayer =
 		? ChangeWorkspace.layer({
 				workspaceRoot: repositoryContext.workspaceRoot,
 				trunkRevision: repositoryContext.trunkRevision ?? "trunk()",
+				storeRoot: repositoryContext.storeRoot,
 			})
 		: ChangeWorkspace.disabledLayer
 

@@ -3,6 +3,7 @@ import { useRenderer } from "@opentui/react"
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { formatRelativeDate } from "../date.js"
 import type { CheckItem, PullRequestComment, PullRequestItem, PullRequestLabel } from "../domain.js"
+import { formatRelationExplanation, type LocalRemoteRelation } from "../localDomain.js"
 import { colors, type ThemeId } from "./colors.js"
 import { commentCountText, CommentSegmentsLine, type CommentSegment } from "./comments.js"
 import { diffStatText } from "./diff.js"
@@ -529,6 +530,7 @@ export const DetailHeader = ({
 	showChecks = false,
 	comments = [],
 	commentsStatus = "idle",
+	localRelation = null,
 }: {
 	pullRequest: PullRequestItem
 	contentWidth: number
@@ -537,6 +539,7 @@ export const DetailHeader = ({
 	showChecks?: boolean
 	comments?: readonly PullRequestComment[]
 	commentsStatus?: DetailCommentsStatus
+	localRelation?: LocalRemoteRelation | null
 }) => {
 	const wrappedTitle = wrapText(pullRequest.title, Math.max(1, paneWidth - 2))
 	const layout = computeDetailHeaderLayout(pullRequest, paneWidth, showChecks)
@@ -568,6 +571,11 @@ export const DetailHeader = ({
 					<DiffStats pullRequest={pullRequest} loadingIndicator={loadingIndicator} />
 				</TextLine>
 			</PaddedRow>
+			{localRelation ? (
+				<PaddedRow>
+					<PlainLine text={trimCell(formatRelationExplanation(localRelation).split("\n")[0] ?? "", contentWidth)} fg={colors.count} />
+				</PaddedRow>
+			) : null}
 			{labelRows.map((row, index) => (
 				<PaddedRow key={index}>
 					<TextLine>

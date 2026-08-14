@@ -207,7 +207,11 @@ directory.
 - `{{repoPath}}` — resolved local path (requires a matching `repoPaths` entry)
 
 If `editorCommand` is omitted, ghui falls back to `$VISUAL`/`$EDITOR` opening
-the resolved `repoPath`. Some common recipes:
+the resolved `repoPath`. `gh pr checkout` recipes are Git-specific. In a
+Jujutsu workspace, use **Open PR in JJ workspace** to create or open a sibling
+workspace without moving the current working-copy change.
+
+Some common recipes:
 
 ```jsonc
 // diffview.nvim: checkout the branch and diff against base

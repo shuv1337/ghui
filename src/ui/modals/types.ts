@@ -566,6 +566,46 @@ export const initialResourceEditorModalState: ResourceEditorModalState = {
 	error: null,
 }
 
+export interface ChangePlanModalState {
+	readonly kind: "link-pr" | "detach-pr" | "workspace-handoff"
+	readonly title: string
+	readonly lines: readonly string[]
+	readonly confirmLabel: string
+	readonly running: boolean
+	readonly error: string | null
+	readonly repository: string
+	readonly prNumber: number | null
+	readonly changeId: string | null
+	readonly commitId: string | null
+	readonly workspaceName: string | null
+	readonly destinationPath: string | null
+	readonly existingWorkspace: boolean
+	readonly operationId: string | null
+	readonly storeRoot: string | null
+	readonly currentWorkspaceName: string | null
+	readonly currentWorkingCopyChangeId: string | null
+}
+
+export const initialChangePlanModalState: ChangePlanModalState = {
+	kind: "link-pr",
+	title: "Confirm",
+	lines: [],
+	confirmLabel: "confirm",
+	running: false,
+	error: null,
+	repository: "",
+	prNumber: null,
+	changeId: null,
+	commitId: null,
+	workspaceName: null,
+	destinationPath: null,
+	existingWorkspace: false,
+	operationId: null,
+	storeRoot: null,
+	currentWorkspaceName: null,
+	currentWorkingCopyChangeId: null,
+}
+
 export const initialDeleteResourceModalState: DeleteResourceModalState = {
 	kind: "branch",
 	repository: "",
@@ -603,6 +643,7 @@ export type Modal = Data.TaggedEnum<{
 	DeleteRelease: DeleteReleaseModalState
 	ResourceEditor: ResourceEditorModalState
 	DeleteResource: DeleteResourceModalState
+	ChangePlan: ChangePlanModalState
 }>
 
 export const Modal = Data.taggedEnum<Modal>()
@@ -636,4 +677,5 @@ export const modalInitialStates = {
 	DeleteRelease: initialDeleteReleaseModalState,
 	ResourceEditor: initialResourceEditorModalState,
 	DeleteResource: initialDeleteResourceModalState,
+	ChangePlan: initialChangePlanModalState,
 } as const satisfies { [Tag in Exclude<ModalTag, "None">]: ModalState<Tag> }

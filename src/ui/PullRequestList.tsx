@@ -1,5 +1,6 @@
 import { TextAttributes } from "@opentui/core"
 import type { LoadStatus, PullRequestItem } from "../domain.js"
+import { formatRelationBadge, type LocalRemoteRelation } from "../localDomain.js"
 import { daysOpen } from "../date.js"
 import { colors } from "./colors.js"
 import { SelectableRow, useHoverState } from "./listSelection/SelectableRow.js"
@@ -121,6 +122,7 @@ const PullRequestRow = ({
 	onSelect,
 	onToggleSelection,
 	onHoverChange,
+	relation,
 }: {
 	pullRequest: PullRequestItem
 	selected: boolean
@@ -134,6 +136,7 @@ const PullRequestRow = ({
 	onSelect: () => void
 	onToggleSelection?: () => void
 	onHoverChange: (hovered: boolean) => void
+	relation?: LocalRemoteRelation | null
 }) => {
 	const ageText = `${daysOpen(pullRequest.updatedAt)}d`
 	const title = pullRequest.title.trim()
@@ -149,7 +152,9 @@ const PullRequestRow = ({
 				? pullRequest.headRefName
 				: `${pullRequest.headRefName} → ${pullRequest.baseRefName}`
 	const authorText = `@${pullRequest.author}`
-	const branchWidth = branchText ? Math.max(0, metaWidth - authorText.length - 1) : 0
+	const relationBadge = relation ? formatRelationBadge(relation) : null
+	const relationText = relationBadge ? ` ${relationBadge}` : ""
+	const branchWidth = branchText ? Math.max(0, metaWidth - authorText.length - relationText.length - 1) : 0
 	const display = pullRequestRowDisplay(pullRequest, selected)
 
 	return (
@@ -181,7 +186,8 @@ const PullRequestRow = ({
 					{compact ? null : (
 						<TextLine width={contentWidth} fg={colors.muted} bg={rowBg}>
 							<span>{" ".repeat(metaIndentWidth)}</span>
-							<MatchedCell text={authorText} width={branchText ? authorText.length : metaWidth} query={filterText} />
+							<MatchedCell text={authorText} width={branchText ? authorText.length : Math.max(0, metaWidth - relationText.length)} query={filterText} />
+							{relationBadge ? <span fg={colors.count}>{relationText}</span> : null}
 							{branchText ? <span> </span> : null}
 							{branchText ? (
 								<span fg={colors.separator}>
@@ -215,6 +221,7 @@ export const PullRequestList = ({
 	compact = false,
 	bulkSelectedUrls = [],
 	onTogglePullRequestSelection,
+	relations,
 }: {
 	groups: PullRequestGroups
 	selectedUrl: string | null
@@ -234,6 +241,7 @@ export const PullRequestList = ({
 	compact?: boolean
 	bulkSelectedUrls?: readonly string[]
 	onTogglePullRequestSelection?: (url: string) => void
+	relations?: Readonly<Record<string, LocalRemoteRelation>>
 }) => {
 	const rows = buildPullRequestListRows({
 		groups,
@@ -283,6 +291,7 @@ export const PullRequestList = ({
 						onSelect={() => onSelectPullRequest(pullRequestUrl)}
 						{...(onTogglePullRequestSelection ? { onToggleSelection: () => onTogglePullRequestSelection(pullRequestUrl) } : {})}
 						onHoverChange={onHoverChange(pullRequestUrl)}
+						relation={relations?.[pullRequestUrl] ?? null}
 					/>
 				)
 			})}

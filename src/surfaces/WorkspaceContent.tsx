@@ -286,6 +286,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				...derivations.prListProps,
 				bulkSelectedUrls: props.selectedItemUrls,
 				onTogglePullRequestSelection: props.toggleItemSelection,
+				...(props.changesView.relations ? { relations: props.changesView.relations } : {}),
 			}}
 			selectedPullRequest={props.selectedPullRequest}
 			selectedComments={props.selectedComments}
@@ -323,6 +324,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			diffScrollRef={props.scrollRefs.diffScrollRef}
 			onLinkOpen={props.openInlineLink}
 			diffFilePanel={props.diffFilePanel}
+			localRelation={props.changesView.relations?.[props.selectedPullRequest?.url ?? ""] ?? null}
 		/>
 	)
 }
