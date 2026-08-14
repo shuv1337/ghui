@@ -35,7 +35,7 @@ export interface CliDependencies {
 	readonly version: string
 	readonly stdinIsTTY: boolean
 	readonly stdoutIsTTY: boolean
-	readonly doctor: () => Promise<readonly DoctorCheck[]>
+	readonly doctor: (explicitRepository?: string | null) => Promise<readonly DoctorCheck[]>
 	readonly inspectCache: () => Promise<CacheInspection>
 	readonly cleanCache: (apply: boolean) => Promise<CacheInspection>
 	readonly openTarget: (type: OpenTargetType, id: string, repository: string | null) => Promise<void>
@@ -59,7 +59,7 @@ Terminal UI and command-line tools for GitHub repositories.
 
 Usage:
   ghui [--repo owner/name]             Start the TUI
-  ghui doctor [--json]                 Diagnose GitHub, config, cache, and terminal readiness
+  ghui doctor [--json]                 Diagnose GitHub, JJ, config, cache, and terminal readiness
   ghui cache list [--json]             Inspect cache files and health
   ghui cache clean [--dry-run|--apply] [--json]
                                        Preview cleanup by default; --apply removes exact cache files
@@ -151,7 +151,7 @@ export const runCli = async (input: readonly string[], dependencies: CliDependen
 	}
 	if (command === "doctor") {
 		if (args.some((arg) => arg !== "doctor" && arg !== "--json")) return result({ exitCode: 2, stderr: "Usage: ghui doctor [--json]\n", repository })
-		const checks = await dependencies.doctor()
+		const checks = await dependencies.doctor(repository)
 		const formatted = doctorOutput(checks)
 		return result({
 			exitCode: formatted.overall === "failing" ? 1 : 0,

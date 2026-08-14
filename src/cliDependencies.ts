@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite"
 import type { CacheEntry, CacheInspection, CliDependencies, DoctorCheck, OpenTargetType, RepositorySummary } from "./cli.js"
 import { config } from "./config.js"
 import { configDirectory, configPath, readStoredConfig } from "./configStore.js"
+import { discoverRepositoryContext, repositoryContextDoctorChecks, resolveRepositoryScope } from "./services/RepositoryContext.js"
 
 interface ProcessOutput {
 	readonly exitCode: number
@@ -123,7 +124,7 @@ const writableDirectoryCheck = async (id: string, path: string): Promise<DoctorC
 	}
 }
 
-const doctor = async (): Promise<readonly DoctorCheck[]> => {
+const doctor = async (explicitRepository?: string | null): Promise<readonly DoctorCheck[]> => {
 	const checks: DoctorCheck[] = []
 	const version = await run(["--version"])
 	checks.push(
@@ -137,9 +138,15 @@ const doctor = async (): Promise<readonly DoctorCheck[]> => {
 			? { id: "auth", status: "pass", summary: "authenticated" }
 			: { id: "auth", status: "fail", summary: "authentication failed", detail: auth?.stderr.trim() || "gh unavailable" },
 	)
-	const repository = auth?.exitCode === 0 ? await run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]) : null
-	const repositoryName = repository?.exitCode === 0 ? repository.stdout.trim() : null
-	checks.push(repositoryName ? { id: "repository", status: "pass", summary: repositoryName } : { id: "repository", status: "warn", summary: "not in a GitHub repository" })
+	const context = discoverRepositoryContext(explicitRepository ? { explicitRepository } : {})
+	const repositoryName = resolveRepositoryScope(explicitRepository, context)
+	const repositoryDetail = [context.localKind === "none" ? null : context.localKind, context.workspaceRoot].filter(Boolean).join(" · ")
+	checks.push(
+		repositoryName
+			? { id: "repository", status: "pass", summary: repositoryName, ...(repositoryDetail ? { detail: repositoryDetail } : {}) }
+			: { id: "repository", status: "warn", summary: "not in a GitHub repository" },
+	)
+	checks.push(...repositoryContextDoctorChecks(context))
 	try {
 		const stored = await readStoredConfig()
 		checks.push({
@@ -204,7 +211,8 @@ export const openTargetArgs = (type: OpenTargetType, id: string, repository: str
 }
 
 const openTarget = async (type: OpenTargetType, id: string, repository: string | null): Promise<void> => {
-	await gh(openTargetArgs(type, id, repository))
+	const resolved = resolveRepositoryScope(repository, discoverRepositoryContext())
+	await gh(openTargetArgs(type, id, resolved))
 }
 
 const listRepositories = async (): Promise<readonly RepositorySummary[]> => {

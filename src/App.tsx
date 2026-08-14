@@ -63,6 +63,7 @@ export const App = ({ systemThemeGeneration = 0 }: AppProps) => {
 							width={Math.max(24, shell.contentWidth - 1)}
 							surfaces={shell.workspaceTabSurfaces}
 							counts={shell.workspaceTabCounts}
+							labels={shell.workspaceTabLabels}
 							onSelect={shell.switchWorkspaceSurface}
 						/>
 					</box>

@@ -24,7 +24,7 @@ describe("Workspace Scope", () => {
 			const repository = [registry.get(selectedRepositoryAtom), registry.get(workspaceTabSurfacesAtom)]
 			console.log(JSON.stringify({ user, repository }))
 		`
-		const stdout = await runIsolatedProbe(probe)
+		const stdout = await runIsolatedProbe(probe, { GHUI_MOCK_PR_COUNT: "1", GHUI_MOCK_REPOSITORY: "kitlangton/ghui" })
 		expect(JSON.parse(stdout)).toEqual({
 			user: [null, ["repos", "pullRequests", "issues", "notifications"]],
 			repository: ["kitlangton/ghui", ["pullRequests", "issues", "releases", "actions", "branches", "milestones", "environments", "runners"]],

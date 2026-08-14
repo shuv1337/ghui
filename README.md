@@ -35,6 +35,7 @@ The npm package also installs a platform-specific binary package and does not re
 Requirements:
 
 - GitHub CLI installed and authenticated with `gh auth login`
+- Optional: Jujutsu (`jj`) 0.32.0 or newer for local workspace detection. Colocated and non-colocated workspaces are supported. GitHub-only mode works without `jj`.
 
 Run it from anywhere:
 

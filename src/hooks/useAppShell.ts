@@ -7,7 +7,7 @@ import { parseRepositoryInput } from "../pullRequestViews.js"
 import { errorMessage } from "../errors.js"
 
 import { colors } from "../ui/colors.js"
-import { workspaceSurfaceAtom } from "../workspace/atoms.js"
+import { workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
 import { useRepoSurface } from "../surfaces/repo/useRepoSurface.js"
 import { usePullRequestSurface } from "../surfaces/pullRequest/usePullRequestSurface.js"
 import { computeLayout, diffFilePanelWidthFor, isTerminalTooSmall } from "../workspace/layout.js"
@@ -78,8 +78,11 @@ import { useCommandHandoffs } from "./useCommandHandoffs.js"
 import { useDiffCommentDerivations } from "./useDiffCommentDerivations.js"
 import { useDiffCommentNavigator } from "./useDiffCommentNavigator.js"
 import { useItemModalActions } from "../item/useItemModalActions.js"
-import { workspaceSurfacesForScope, type WorkspaceSurface } from "../workspaceSurfaces.js"
-import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath } from "../services/runtime.js"
+import { workspaceSurfaceLabelFor, type WorkspaceSurface } from "../workspaceSurfaces.js"
+import { detectedRepository, mockRepositoryCatalog, mockWorkspacePreferencesPath, repositoryContext } from "../services/runtime.js"
+import { useChangesSurface } from "../surfaces/changes/useChangesSurface.js"
+import { formatJjHeaderStatus } from "../localDomain.js"
+import { jjLocalStateConnected } from "../workspace/jjAvailability.js"
 
 export interface UseAppShellInput {
 	readonly systemThemeGeneration: number
@@ -419,6 +422,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		openUrl,
 	})
 	const { releases, selectedRelease, selectedReleaseIndex, setSelectedReleaseIndex, status: releaseStatus, error: releaseError, view: releaseView } = releaseSurface
+	const changesView = useChangesSurface(selectedRepository, renderer)
 	const splitMetadata = (value: string): readonly string[] => [
 		...new Set(
 			value
@@ -703,7 +707,10 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			})
 	}
 
-	const workspaceTabSurfaces: readonly WorkspaceSurface[] = workspaceSurfacesForScope(selectedRepository ? "repository" : "user")
+	const workspaceTabSurfaces: readonly WorkspaceSurface[] = useAtomValue(workspaceTabSurfacesAtom)
+	useEffect(() => {
+		if (!workspaceTabSurfaces.includes(activeWorkspaceSurface)) setActiveWorkspaceSurface("pullRequests")
+	}, [activeWorkspaceSurface, setActiveWorkspaceSurface, workspaceTabSurfaces])
 	const repo = useRepoSurface({
 		pullRequests,
 		allIssues,
@@ -780,11 +787,13 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pendingReviewComments: selectedPendingReview?.comments ?? [],
 	})
 	const getCurrentGroupIndex = (current: number) => groupIndexAt(groupStarts, current)
+	const jjStatusBudget = Math.max(0, headerFooterWidth - (username ? username.length + 3 : 0) - 24)
 	const { headerRight, headerLeftWidth, footerNotice, homeCrumb, breadcrumbSeparatorText, headerRepoWidth } = computeHeaderDerivations({
 		username,
 		notice,
 		headerFooterWidth,
 		selectedRepository,
+		localStatus: changesView.snapshot && jjLocalStateConnected(repositoryContext) ? formatJjHeaderStatus(changesView.snapshot, jjStatusBudget) : null,
 	})
 	const { updatePullRequest, updateIssue, markPullRequestCompleted, restoreOptimisticPullRequest } = useItemMutations({
 		pullRequests,
@@ -954,6 +963,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		issuesStatus,
 		releaseStatus,
 		notificationStatus: notificationsView.status,
+		changeStatus: changesView.status,
 		isLoadingMorePullRequests,
 		issueFetchInFlight,
 		isLoadingMoreIssues,
@@ -1440,6 +1450,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			repositoryItems,
 			releases,
 			resourceItemsLength: resourcesView.active?.items.length ?? 0,
+			changeItemsLength: changesView.snapshot?.stack.length ?? 0,
 			notificationItemsLength: notificationsView.items.length,
 			loadMoreSlotAvailable,
 			issueLoadMoreSlotAvailable,
@@ -1450,6 +1461,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			setSelectedRepositoryIndex,
 			setSelectedReleaseIndex,
 			setSelectedResourceIndex: (next) => resourcesView.active?.setSelectedIndex(next),
+			setSelectedChangeIndex: changesView.setSelectedIndex,
 			setSelectedNotificationIndex: notificationsView.setSelectedIndex,
 		})
 	const handleQuitOrClose = () => {
@@ -1604,6 +1616,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		repositoryItemsLength: repositoryItems.length,
 		releasesLength: releases.length,
 		resourceItemsLength: resourcesView.active?.items.length ?? 0,
+		changeItemsLength: changesView.snapshot?.stack.length ?? 0,
 		notificationItemsLength: notificationsView.items.length,
 		selectedRepository,
 		selectedPullRequest,
@@ -1640,6 +1653,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		setSelectedRepositoryIndex,
 		setSelectedReleaseIndex,
 		setSelectedResourceIndex: (next) => resourcesView.active?.setSelectedIndex(next),
+		setSelectedChangeIndex: changesView.setSelectedIndex,
 		setSelectedNotificationIndex: notificationsView.setSelectedIndex,
 		handleQuitOrClose,
 		setCommandPalette,
@@ -1697,6 +1711,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		repositoryItems,
 		releaseCount: releases.length,
 		actionRunCount: actionsView.runsState.status === "ready" ? actionsView.runsState.value.length : 0,
+		changeCount: changesView.snapshot?.stack.length ?? 0,
 		branchCount: resourcesView.branches.length,
 		milestoneCount: resourcesView.milestones.length,
 		environmentCount: resourcesView.environments.length,
@@ -1770,6 +1785,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		pullRequestStatus,
 		issuesStatus,
 		releaseStatus,
+		changeStatus: changesView.status,
 		selectedRelease,
 		isActiveSurfaceLoading,
 		closeModal,
@@ -1789,6 +1805,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 		headerRight,
 		showWorkspaceTabs,
 		workspaceTabSurfaces,
+		workspaceTabLabels: Object.fromEntries(workspaceTabSurfaces.map((surface) => [surface, workspaceSurfaceLabelFor(surface, jjLocalStateConnected(repositoryContext))])),
 		workspaceTabCounts,
 		activeWorkspaceSurface,
 		switchWorkspaceSurface,
@@ -1809,6 +1826,7 @@ export const useAppShell = ({ systemThemeGeneration }: UseAppShellInput) => {
 			actionsView,
 			resourcesView,
 			notificationsView,
+			changesView,
 			detailFullView,
 			layout,
 			derivations,

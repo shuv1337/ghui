@@ -24,6 +24,7 @@ export interface UseLoadingStatusInput {
 	readonly issuesStatus: "loading" | "ready" | "error"
 	readonly releaseStatus: "loading" | "ready" | "error"
 	readonly notificationStatus: "loading" | "ready" | "error"
+	readonly changeStatus: "idle" | "loading" | "ready" | "error"
 	readonly isLoadingMorePullRequests: boolean
 	readonly issueFetchInFlight: boolean
 	readonly isLoadingMoreIssues: boolean
@@ -69,6 +70,7 @@ export const useLoadingStatus = ({
 	issuesStatus,
 	releaseStatus,
 	notificationStatus,
+	changeStatus,
 	isLoadingMorePullRequests,
 	issueFetchInFlight,
 	isLoadingMoreIssues,
@@ -94,7 +96,8 @@ export const useLoadingStatus = ({
 		(activeWorkspaceSurface === "pullRequests" && (pullRequestStatus === "loading" || isRefreshingPullRequests || isHydratingPullRequestDetails || isLoadingMorePullRequests)) ||
 		(activeWorkspaceSurface === "issues" && (issuesStatus === "loading" || issueFetchInFlight || isLoadingMoreIssues)) ||
 		(activeWorkspaceSurface === "releases" && releaseStatus === "loading") ||
-		(activeWorkspaceSurface === "notifications" && notificationStatus === "loading")
+		(activeWorkspaceSurface === "notifications" && notificationStatus === "loading") ||
+		(activeWorkspaceSurface === "changes" && changeStatus === "loading")
 	const hasActiveLoadingIndicator =
 		pullRequestResult.waiting ||
 		isHydratingPullRequestDetails ||
@@ -102,6 +105,7 @@ export const useLoadingStatus = ({
 		(activeWorkspaceSurface === "issues" && (issueFetchInFlight || isLoadingMoreIssues)) ||
 		(activeWorkspaceSurface === "releases" && releaseStatus === "loading") ||
 		(activeWorkspaceSurface === "notifications" && notificationStatus === "loading") ||
+		(activeWorkspaceSurface === "changes" && changeStatus === "loading") ||
 		selectedCommentsStatus === "loading" ||
 		labelModal.loading ||
 		closeModal.running ||

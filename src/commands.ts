@@ -8,6 +8,7 @@ export type CommandScope =
 	| "Milestones"
 	| "Environments"
 	| "Runners"
+	| "Changes"
 	| "Notifications"
 	| "Diff"
 	| "Runs"
@@ -27,6 +28,7 @@ const SCOPE_ORDER: readonly CommandScope[] = [
 	"Milestones",
 	"Environments",
 	"Runners",
+	"Changes",
 	"Notifications",
 	"Diff",
 	"Runs",

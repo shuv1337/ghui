@@ -184,6 +184,7 @@ export interface UseAppKeymapInput {
 	readonly repositoryItemsLength: number
 	readonly releasesLength: number
 	readonly resourceItemsLength: number
+	readonly changeItemsLength: number
 	readonly notificationItemsLength: number
 	readonly selectedRepository: string | null
 	readonly selectedPullRequest: { readonly url: string } | null
@@ -220,6 +221,7 @@ export interface UseAppKeymapInput {
 	readonly setSelectedRepositoryIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedReleaseIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedResourceIndex: (next: number | ((current: number) => number)) => void
+	readonly setSelectedChangeIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedNotificationIndex: (next: number | ((current: number) => number)) => void
 
 	// Shell
@@ -468,9 +470,11 @@ export const useAppKeymap = (i: UseAppKeymapInput): void => {
 									  i.activeWorkspaceSurface === "environments" ||
 									  i.activeWorkspaceSurface === "runners"
 									? i.resourceItemsLength
-									: i.activeWorkspaceSurface === "notifications"
-										? i.notificationItemsLength
-										: i.issuesLength,
+									: i.activeWorkspaceSurface === "changes"
+										? i.changeItemsLength
+										: i.activeWorkspaceSurface === "notifications"
+											? i.notificationItemsLength
+											: i.issuesLength,
 				hasFilter: i.filterQuery.length > 0,
 				activeSurface: i.activeWorkspaceSurface,
 				surfaces: i.workspaceTabSurfaces,
@@ -526,7 +530,9 @@ export const useAppKeymap = (i: UseAppKeymapInput): void => {
 										  i.activeWorkspaceSurface === "environments" ||
 										  i.activeWorkspaceSurface === "runners"
 										? i.setSelectedResourceIndex(index)
-										: i.setSelectedIndex(index),
+										: i.activeWorkspaceSurface === "changes"
+											? i.setSelectedChangeIndex(index)
+											: i.setSelectedIndex(index),
 			},
 			openCommandPalette: () => i.runCommandById("command.open"),
 			handleQuitOrClose: i.handleQuitOrClose,

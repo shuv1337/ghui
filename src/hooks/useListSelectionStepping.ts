@@ -9,6 +9,7 @@ export interface UseListSelectionSteppingInput {
 	readonly repositoryItems: readonly RepositoryListItem[]
 	readonly releases: readonly ReleaseItem[]
 	readonly resourceItemsLength: number
+	readonly changeItemsLength: number
 	readonly notificationItemsLength: number
 	readonly loadMoreSlotAvailable: boolean
 	readonly issueLoadMoreSlotAvailable: boolean
@@ -19,6 +20,7 @@ export interface UseListSelectionSteppingInput {
 	readonly setSelectedRepositoryIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedReleaseIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedResourceIndex: (next: number | ((current: number) => number)) => void
+	readonly setSelectedChangeIndex: (next: number | ((current: number) => number)) => void
 	readonly setSelectedNotificationIndex: (next: number | ((current: number) => number)) => void
 }
 
@@ -52,6 +54,7 @@ export const useListSelectionStepping = ({
 	repositoryItems,
 	releases,
 	resourceItemsLength,
+	changeItemsLength,
 	notificationItemsLength,
 	loadMoreSlotAvailable,
 	issueLoadMoreSlotAvailable,
@@ -62,6 +65,7 @@ export const useListSelectionStepping = ({
 	setSelectedRepositoryIndex,
 	setSelectedReleaseIndex,
 	setSelectedResourceIndex,
+	setSelectedChangeIndex,
 	setSelectedNotificationIndex,
 }: UseListSelectionSteppingInput): ListSelectionStepping => {
 	const prMaxIndex = () => Math.max(0, visiblePullRequests.length - 1 + (loadMoreSlotAvailable ? 1 : 0))
@@ -98,20 +102,25 @@ export const useListSelectionStepping = ({
 							if (resourceItemsLength === 0) return 0
 							return Math.max(0, Math.min(resourceItemsLength - 1, current + delta))
 						})
-					: activeWorkspaceSurface === "issues"
-						? setSelectedIssueIndex((current) => {
-								if (issues.length === 0) return 0
-								return Math.max(0, Math.min(issueMaxIndex(), current + delta))
+					: activeWorkspaceSurface === "changes"
+						? setSelectedChangeIndex((current) => {
+								if (changeItemsLength === 0) return 0
+								return Math.max(0, Math.min(changeItemsLength - 1, current + delta))
 							})
-						: activeWorkspaceSurface === "releases"
-							? setSelectedReleaseIndex((current) => {
-									if (releases.length === 0) return 0
-									return Math.max(0, Math.min(releases.length - 1, current + delta))
+						: activeWorkspaceSurface === "issues"
+							? setSelectedIssueIndex((current) => {
+									if (issues.length === 0) return 0
+									return Math.max(0, Math.min(issueMaxIndex(), current + delta))
 								})
-							: setSelectedIndex((current) => {
-									if (visiblePullRequests.length === 0) return 0
-									return Math.max(0, Math.min(prMaxIndex(), current + delta))
-								})
+							: activeWorkspaceSurface === "releases"
+								? setSelectedReleaseIndex((current) => {
+										if (releases.length === 0) return 0
+										return Math.max(0, Math.min(releases.length - 1, current + delta))
+									})
+								: setSelectedIndex((current) => {
+										if (visiblePullRequests.length === 0) return 0
+										return Math.max(0, Math.min(prMaxIndex(), current + delta))
+									})
 	const stepSelectedDown = (count = 1) => stepSelected(count)
 	const stepSelectedUp = (count = 1) => stepSelected(-count)
 	const stepSelectedDownWithLoadMore = () => {
@@ -138,6 +147,10 @@ export const useListSelectionStepping = ({
 			setSelectedResourceIndex((current) => (resourceItemsLength === 0 || current >= resourceItemsLength - 1 ? 0 : current + 1))
 			return
 		}
+		if (activeWorkspaceSurface === "changes") {
+			setSelectedChangeIndex((current) => (changeItemsLength === 0 || current >= changeItemsLength - 1 ? 0 : current + 1))
+			return
+		}
 		if (activeWorkspaceSurface === "releases") {
 			setSelectedReleaseIndex((current) => (releases.length === 0 || current >= releases.length - 1 ? 0 : current + 1))
 			return
@@ -155,11 +168,13 @@ export const useListSelectionStepping = ({
 				? setSelectedNotificationIndex((current) => Math.max(0, current - 1))
 				: activeWorkspaceSurface === "branches" || activeWorkspaceSurface === "milestones" || activeWorkspaceSurface === "environments" || activeWorkspaceSurface === "runners"
 					? setSelectedResourceIndex((current) => Math.max(0, current - 1))
-					: activeWorkspaceSurface === "issues"
-						? setSelectedIssueIndex((current) => Math.max(0, current - 1))
-						: activeWorkspaceSurface === "releases"
-							? setSelectedReleaseIndex((current) => Math.max(0, current - 1))
-							: setSelectedIndex((current) => Math.max(0, current - 1))
+					: activeWorkspaceSurface === "changes"
+						? setSelectedChangeIndex((current) => Math.max(0, current - 1))
+						: activeWorkspaceSurface === "issues"
+							? setSelectedIssueIndex((current) => Math.max(0, current - 1))
+							: activeWorkspaceSurface === "releases"
+								? setSelectedReleaseIndex((current) => Math.max(0, current - 1))
+								: setSelectedIndex((current) => Math.max(0, current - 1))
 
 	return { stepSelected, stepSelectedDown, stepSelectedUp, stepSelectedDownWithLoadMore, stepSelectedUpWrap, moveSelectedToPreviousGroup, moveSelectedToNextGroup }
 }

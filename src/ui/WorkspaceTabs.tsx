@@ -5,9 +5,12 @@ import { fitCell, TextLine } from "./primitives.js"
 import { workspaceSurfaceLabels, workspaceSurfaces, type WorkspaceSurface } from "../workspaceSurfaces.js"
 
 export type WorkspaceSurfaceCounts = Partial<Record<WorkspaceSurface, number | string>>
+export type WorkspaceSurfaceLabels = Partial<Record<WorkspaceSurface, string>>
 
-const tabText = (surface: WorkspaceSurface, counts: WorkspaceSurfaceCounts) => {
-	const label = workspaceSurfaceLabels[surface]
+const labelFor = (surface: WorkspaceSurface, labels?: WorkspaceSurfaceLabels) => labels?.[surface] ?? workspaceSurfaceLabels[surface]
+
+const tabText = (surface: WorkspaceSurface, counts: WorkspaceSurfaceCounts, labels?: WorkspaceSurfaceLabels) => {
+	const label = labelFor(surface, labels)
 	const count = counts[surface]
 	return count === undefined ? ` ${label} ` : ` ${label} ${count} `
 }
@@ -18,9 +21,9 @@ export interface WorkspaceTabLayout {
 	readonly overflowText: string | null
 }
 
-const overflowTabText = (activeSurface: WorkspaceSurface, overflow: readonly WorkspaceSurface[]) => {
+const overflowTabText = (activeSurface: WorkspaceSurface, overflow: readonly WorkspaceSurface[], labels?: WorkspaceSurfaceLabels) => {
 	const activeIndex = overflow.indexOf(activeSurface)
-	return activeIndex < 0 ? ` MORE +${overflow.length} ` : ` ${workspaceSurfaceLabels[activeSurface]} ${activeIndex + 1}/${overflow.length} `
+	return activeIndex < 0 ? ` MORE +${overflow.length} ` : ` ${labelFor(activeSurface, labels)} ${activeIndex + 1}/${overflow.length} `
 }
 
 const segmentsWidth = (texts: readonly string[]) => texts.reduce((sum, text) => sum + text.length, 0) + Math.max(0, texts.length - 1)
@@ -35,21 +38,22 @@ export const computeWorkspaceTabLayout = (
 	width: number,
 	counts: WorkspaceSurfaceCounts,
 	surfaces: readonly WorkspaceSurface[] = workspaceSurfaces,
+	labels?: WorkspaceSurfaceLabels,
 ): WorkspaceTabLayout => {
 	const available = Math.max(0, width - 1) // trailing divider
-	const allTexts = surfaces.map((surface) => tabText(surface, counts))
+	const allTexts = surfaces.map((surface) => tabText(surface, counts, labels))
 	if (segmentsWidth(allTexts) <= available) return { primary: surfaces, overflow: [], overflowText: null }
 
 	for (let primaryCount = Math.max(0, surfaces.length - 1); primaryCount >= 0; primaryCount -= 1) {
 		const primary = surfaces.slice(0, primaryCount)
 		const overflow = surfaces.slice(primaryCount)
-		const overflowText = overflowTabText(activeSurface, overflow)
-		if (segmentsWidth([...primary.map((surface) => tabText(surface, counts)), overflowText]) <= available) {
+		const overflowText = overflowTabText(activeSurface, overflow, labels)
+		if (segmentsWidth([...primary.map((surface) => tabText(surface, counts, labels)), overflowText]) <= available) {
 			return { primary, overflow, overflowText }
 		}
 	}
 
-	const overflowText = overflowTabText(activeSurface, surfaces)
+	const overflowText = overflowTabText(activeSurface, surfaces, labels)
 	return { primary: [], overflow: surfaces, overflowText: overflowText.slice(0, available) }
 }
 
@@ -58,9 +62,10 @@ export const workspaceTabSeparatorColumns = (
 	surfaces: readonly WorkspaceSurface[] = workspaceSurfaces,
 	width = Number.MAX_SAFE_INTEGER,
 	activeSurface: WorkspaceSurface = surfaces[0] ?? "pullRequests",
+	labels?: WorkspaceSurfaceLabels,
 ) => {
-	const layout = computeWorkspaceTabLayout(activeSurface, width, counts, surfaces)
-	const texts = [...layout.primary.map((surface) => tabText(surface, counts)), ...(layout.overflowText ? [layout.overflowText] : [])]
+	const layout = computeWorkspaceTabLayout(activeSurface, width, counts, surfaces, labels)
+	const texts = [...layout.primary.map((surface) => tabText(surface, counts, labels)), ...(layout.overflowText ? [layout.overflowText] : [])]
 	const columns: number[] = []
 	let column = 0
 	for (const text of texts) {
@@ -76,22 +81,24 @@ export const WorkspaceTabs = ({
 	width,
 	surfaces = workspaceSurfaces,
 	counts = {},
+	labels,
 	onSelect,
 }: {
 	activeSurface: WorkspaceSurface
 	width: number
 	surfaces?: readonly WorkspaceSurface[]
 	counts?: WorkspaceSurfaceCounts
+	labels?: WorkspaceSurfaceLabels
 	onSelect: (surface: WorkspaceSurface) => void
 }) => {
 	const [hoveredSurface, setHoveredSurface] = useState<WorkspaceSurface | "overflow" | null>(null)
 	const activeCountColor = mixHex(colors.separator, colors.accent, 0.45)
-	const layout = computeWorkspaceTabLayout(activeSurface, width, counts, surfaces)
+	const layout = computeWorkspaceTabLayout(activeSurface, width, counts, surfaces, labels)
 	const rendered = layout.primary.map((surface) => {
 		const active = surface === activeSurface
-		const label = workspaceSurfaceLabels[surface]
+		const label = labelFor(surface, labels)
 		const count = counts[surface]
-		const text = tabText(surface, counts)
+		const text = tabText(surface, counts, labels)
 		return { surface, active, label, count, text }
 	})
 	const segmentCount = rendered.length + (layout.overflowText ? 1 : 0)

@@ -15,6 +15,7 @@ const columns = (ids: readonly string[]): readonly SurfaceColumn[] =>
 export const surfaceColumnSchemas = {
 	repos: columns(["repository", "pullRequests", "issues", "updatedAt"]),
 	pullRequests: columns(["title", "repository", "author", "state", "reviewStatus", "checkStatus", "updatedAt"]),
+	changes: columns(["changeId", "commitId", "bookmarks", "description", "state"]),
 	issues: columns(["title", "repository", "author", "state", "comments", "updatedAt"]),
 	releases: columns(["tagName", "name", "author", "draft", "prerelease", "publishedAt"]),
 	actions: columns(["workflow", "title", "branch", "event", "status", "conclusion", "updatedAt"]),

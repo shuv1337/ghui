@@ -2,8 +2,10 @@ import * as Atom from "effect/unstable/reactivity/Atom"
 import { CacheService, type RepoRollupRow } from "../services/CacheService.js"
 import { githubRuntime, initialRecentRepositories } from "../services/runtime.js"
 import type { ViewerId, WorkspacePreferences } from "../workspacePreferences.js"
+import { repositoryContext } from "../services/runtime.js"
 import { workspaceSurfacesForScope, type WorkspaceSurface } from "../workspaceSurfaces.js"
 import { userWorkspaceScope, workspaceScopeRepository, type WorkspaceScope } from "../workspaceScope.js"
+import { visibleWorkspaceSurfaces } from "./jjAvailability.js"
 
 export const workspaceSurfaceAtom = Atom.make<WorkspaceSurface>("pullRequests")
 export const workspaceScopeAtom = Atom.make<WorkspaceScope>(userWorkspaceScope).pipe(Atom.keepAlive)
@@ -15,7 +17,10 @@ export const recentRepositoriesAtom = Atom.make<readonly string[]>(initialRecent
 // Which surface tabs are visible right now: the repo-scoped subset when a
 // repository is selected, the full user-level set otherwise. Commands that
 // gate on "is this surface even reachable from here?" read this.
-export const workspaceTabSurfacesAtom = Atom.make((get): readonly WorkspaceSurface[] => workspaceSurfacesForScope(get(selectedRepositoryAtom) ? "repository" : "user"))
+export const workspaceTabSurfacesAtom = Atom.make((get): readonly WorkspaceSurface[] => {
+	const selectedRepository = get(selectedRepositoryAtom)
+	return visibleWorkspaceSurfaces(workspaceSurfacesForScope(selectedRepository ? "repository" : "user"), repositoryContext, selectedRepository)
+})
 
 export const readWorkspacePreferencesAtom = githubRuntime.fn<ViewerId>()((viewer) => CacheService.use((cache) => cache.readWorkspacePreferences(viewer)))
 export const writeWorkspacePreferencesAtom = githubRuntime.fn<WorkspacePreferences>()((preferences) => CacheService.use((cache) => cache.writeWorkspacePreferences(preferences)))

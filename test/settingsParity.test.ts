@@ -7,7 +7,7 @@ import { applySurfaceView, normalizeSurfaceView, surfaceColumnSchemas } from "..
 describe("saved Surface views", () => {
 	test("declares columns for every registered Surface and removes renamed fields recoverably", () => {
 		expect(Object.keys(surfaceColumnSchemas).sort()).toEqual(
-			["repos", "pullRequests", "issues", "releases", "actions", "branches", "milestones", "environments", "runners", "notifications"].sort(),
+			["repos", "pullRequests", "changes", "issues", "releases", "actions", "branches", "milestones", "environments", "runners", "notifications"].sort(),
 		)
 		const normalized = normalizeSurfaceView("notifications", {
 			visibleColumns: ["subject", "removedColumn", "repository"],

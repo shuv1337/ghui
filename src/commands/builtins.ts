@@ -43,8 +43,10 @@ import { lastBulkRetrySpecAtom, lastBulkRetryUrlsAtom, selectedItemUrlsAtom } fr
 import { selectedBranchAtom, selectedEnvironmentAtom, selectedMilestoneAtom } from "../surfaces/resource/atoms.js"
 import { notificationSelectedIdsAtom, selectedNotificationAtom } from "../surfaces/notification/atoms.js"
 import { selectedRepositoryAtom, workspaceSurfaceAtom, workspaceTabSurfacesAtom } from "../workspace/atoms.js"
+import { changeRefreshGenerationAtom } from "../surfaces/changes/atoms.js"
 import { type WorkspaceSurface, workspaceSurfaceRegistry } from "../workspaceSurfaces.js"
 import {
+	changeSurfaceReasonAtom,
 	changedFilesReasonAtom,
 	bulkRetryReasonAtom,
 	bulkSelectionReasonAtom,
@@ -1335,6 +1337,23 @@ export const globalCommands: readonly CommandDefinition[] = [
 		disabledReason: releaseSelectedReasonAtom,
 		keywords: ["remove", "confirm"],
 		run: Effect.sync(() => invokeHandoff("openDeleteRelease")),
+	}),
+	defineCommand({
+		id: "change.refresh",
+		title: "Refresh changes",
+		scope: "Changes",
+		shortcut: "r",
+		disabledReason: changeSurfaceReasonAtom,
+		keywords: ["reload", "sync", "jj", "jujutsu"],
+		run: Atom.update(changeRefreshGenerationAtom, (generation) => generation + 1),
+	}),
+	defineCommand({
+		id: "change.open",
+		title: "Show local changes",
+		scope: "Changes",
+		keywords: ["jj", "jujutsu", "stack"],
+		disabledReason: Atom.make((get) => (!get(workspaceTabSurfacesAtom).includes("changes") ? "Connect a Jujutsu workspace to use this surface." : null)),
+		run: switchWorkspaceSurfaceEffect("changes"),
 	}),
 	defineCommand({
 		id: "branch.refresh",

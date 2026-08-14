@@ -21,9 +21,11 @@ export const computeHeaderDerivations = (input: {
 	readonly notice: string | null
 	readonly headerFooterWidth: number
 	readonly selectedRepository: string | null
+	readonly localStatus?: string | null
 }): HeaderDerivations => {
-	const { username, notice, headerFooterWidth, selectedRepository } = input
-	const headerRight = username ? `@${username}` : ""
+	const { username, notice, headerFooterWidth, selectedRepository, localStatus } = input
+	const userChip = username ? `@${username}` : ""
+	const headerRight = [localStatus, userChip].filter((part): part is string => Boolean(part && part.length > 0)).join("  ")
 	const headerLeftWidth = Math.max(0, headerFooterWidth - headerRight.length)
 	const footerNotice = notice ? fitCell(notice, headerFooterWidth) : null
 	const homeCrumb = "HOME"
