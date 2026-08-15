@@ -798,4 +798,33 @@ describe("CacheService", () => {
 
 		expect(cached).toBeNull()
 	})
+
+	test("stores explicit change-to-PR relationships without inferring on read", async () => {
+		const filename = await tempCachePath()
+		const link = {
+			storeId: "/repo/.git",
+			githubRepository: "owner/repo",
+			prNumber: 4,
+			changeId: "c77246d8696ca9b6f2b30d6dbbca7df2",
+			bookmark: null,
+			remoteName: null,
+			localCommitId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			githubHeadSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			observedAt: "2026-08-14T00:00:00.000Z",
+		}
+		const cached = await runCache(
+			filename,
+			Effect.gen(function* () {
+				const cache = yield* CacheService
+				expect(yield* cache.readChangePrLink(link.storeId, link.githubRepository, link.prNumber)).toBeNull()
+				yield* cache.writeChangePrLink(link)
+				const stored = yield* cache.readChangePrLink(link.storeId, link.githubRepository, link.prNumber)
+				yield* cache.deleteChangePrLink(link.storeId, link.githubRepository, link.prNumber)
+				const removed = yield* cache.readChangePrLink(link.storeId, link.githubRepository, link.prNumber)
+				return { stored, removed }
+			}),
+		)
+		expect(cached.stored).toEqual(link)
+		expect(cached.removed).toBeNull()
+	})
 })

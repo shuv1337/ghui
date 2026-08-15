@@ -22,6 +22,8 @@ import type { RepositoryResourcesModel } from "./resource/useResourceSurfaces.js
 import { ResourceSurface } from "../ui/resource/ResourceSurface.js"
 import type { NotificationSurfaceModel } from "./notification/useNotificationSurface.js"
 import { NotificationSurface } from "../ui/notifications/NotificationSurface.js"
+import type { ChangesSurfaceModel } from "./changes/useChangesSurface.js"
+import { ChangesSurface } from "./ChangesSurface.js"
 import type { SurfaceViewConfig } from "../configStore.js"
 
 export interface WorkspaceContentProps {
@@ -33,6 +35,7 @@ export interface WorkspaceContentProps {
 	readonly actionsView: RepositoryActionsViewModel
 	readonly resourcesView: RepositoryResourcesModel
 	readonly notificationsView: NotificationSurfaceModel
+	readonly changesView: ChangesSurfaceModel
 	readonly detailFullView: boolean
 	readonly layout: WorkspaceLayout
 	readonly derivations: WorkspaceDerivations
@@ -177,6 +180,22 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			/>
 		)
 	}
+	if (activeWorkspaceSurface === "changes") {
+		return (
+			<ChangesSurface
+				snapshot={props.changesView.snapshot}
+				selectedIndex={props.changesView.selectedIndex}
+				status={props.changesView.status}
+				error={props.changesView.error}
+				isWideLayout={layout.isWideLayout}
+				width={layout.contentWidth}
+				height={layout.wideBodyHeight}
+				leftWidth={layout.leftPaneWidth}
+				rightWidth={layout.rightPaneWidth}
+				setSelectedIndex={props.changesView.setSelectedIndex}
+			/>
+		)
+	}
 	if (activeWorkspaceSurface === "actions" && props.selectedRepository) {
 		return (
 			<ActionsSurface
@@ -267,6 +286,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 				...derivations.prListProps,
 				bulkSelectedUrls: props.selectedItemUrls,
 				onTogglePullRequestSelection: props.toggleItemSelection,
+				...(props.changesView.relations ? { relations: props.changesView.relations } : {}),
 			}}
 			selectedPullRequest={props.selectedPullRequest}
 			selectedComments={props.selectedComments}
@@ -304,6 +324,7 @@ export const WorkspaceContent = (props: WorkspaceContentProps) => {
 			diffScrollRef={props.scrollRefs.diffScrollRef}
 			onLinkOpen={props.openInlineLink}
 			diffFilePanel={props.diffFilePanel}
+			localRelation={props.changesView.relations?.[props.selectedPullRequest?.url ?? ""] ?? null}
 		/>
 	)
 }

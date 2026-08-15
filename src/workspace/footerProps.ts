@@ -32,6 +32,7 @@ export interface ComputeFooterPropsInput {
 	readonly pullRequestStatus: LoadStatus
 	readonly issuesStatus: LoadStatus
 	readonly releaseStatus: LoadStatus
+	readonly changeStatus: LoadStatus
 	readonly selectedRelease: ReleaseItem | null
 	readonly isActiveSurfaceLoading: boolean
 	readonly closeModal: CloseModalState
@@ -75,7 +76,8 @@ export const computeFooterProps = (input: ComputeFooterPropsInput): WorkspaceFoo
 	hasError:
 		(input.activeWorkspaceSurface === "pullRequests" && input.pullRequestStatus === "error") ||
 		(input.activeWorkspaceSurface === "issues" && input.issuesStatus === "error") ||
-		(input.activeWorkspaceSurface === "releases" && input.releaseStatus === "error"),
+		(input.activeWorkspaceSurface === "releases" && input.releaseStatus === "error") ||
+		(input.activeWorkspaceSurface === "changes" && input.changeStatus === "error"),
 	isLoading: input.isActiveSurfaceLoading || input.closeModal.running || input.pullRequestStateModal.running || input.mergeModal.running || input.submitReviewModal.running,
 	loadingIndicator: input.loadingIndicator,
 	retryProgress: input.retryProgress,

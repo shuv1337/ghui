@@ -12,6 +12,7 @@ const scopeLabels = {
 	"Pull request": "Pull Request",
 	Issue: "Issue",
 	Release: "Release",
+	Changes: "Changes",
 	Branches: "Branches",
 	Milestones: "Milestones",
 	Environments: "Environments",

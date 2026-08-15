@@ -9,6 +9,9 @@ export const workspaceSurfaces = workspaceSurfaceRegistry.map((descriptor) => de
 
 export const workspaceSurfaceLabels = Object.fromEntries(workspaceSurfaceRegistry.map((descriptor) => [descriptor.id, descriptor.label])) as Record<WorkspaceSurface, string>
 
+export const workspaceSurfaceLabelFor = (surface: WorkspaceSurface, jjConnected: boolean): string =>
+	surface === "branches" && jjConnected ? "REMOTE BRANCHES" : workspaceSurfaceLabels[surface]
+
 export const nextWorkspaceSurface = (surface: WorkspaceSurface, delta: 1 | -1, surfaces: readonly WorkspaceSurface[] = workspaceSurfaces): WorkspaceSurface => {
 	const index = Math.max(0, surfaces.indexOf(surface))
 	const next = (index + delta + surfaces.length) % surfaces.length

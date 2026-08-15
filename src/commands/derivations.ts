@@ -35,6 +35,13 @@ export const filterUnsupportedReasonAtom = Atom.make((get) =>
 // the user that PR commands won't run in the current surface. Used as the
 // base layer for every PR-specific command's disabled chain.
 export const pullRequestSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "pullRequests" ? null : "Pull request surface is not active."))
+export const changeSurfaceReasonAtom = Atom.make((get) =>
+	!get(workspaceTabSurfacesAtom).includes("changes")
+		? "Connect a Jujutsu workspace to use this surface."
+		: get(workspaceSurfaceAtom) === "changes"
+			? null
+			: "Changes surface is not active.",
+)
 export const issueSurfaceReasonAtom = Atom.make((get) => (get(workspaceSurfaceAtom) === "issues" ? null : "Issue surface is not active."))
 
 // Layered reason chains, mirroring the structure that lived in
@@ -107,14 +114,18 @@ export const selectedItemLabelAtom = Atom.make((get) => (get(workspaceSurfaceAto
 // Workspace surface helpers — generated per surface so commands can be data.
 export const workspaceSurfaceAlreadyActiveReasonAtom = (surface: WorkspaceSurface): Atom.Atom<string | null> =>
 	Atom.make((get) => {
-		if (!get(workspaceTabSurfacesAtom).includes(surface)) return "This surface requires repository scope."
+		if (!get(workspaceTabSurfacesAtom).includes(surface)) {
+			return surface === "changes" ? "Connect a Jujutsu workspace to use this surface." : "This surface requires repository scope."
+		}
 		return get(workspaceSurfaceAtom) === surface ? "Already showing this surface." : null
 	})
 
 export const workspaceSurfaceSubtitleAtom = (surface: WorkspaceSurface): Atom.Atom<string> =>
 	Atom.make((get) =>
 		!get(workspaceTabSurfacesAtom).includes(surface)
-			? "Open a repository to use this surface"
+			? surface === "changes"
+				? "Requires a connected Jujutsu workspace"
+				: "Open a repository to use this surface"
 			: get(workspaceSurfaceAtom) === surface
 				? "Already showing this surface"
 				: "Switch project surface",

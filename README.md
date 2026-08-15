@@ -35,6 +35,7 @@ The npm package also installs a platform-specific binary package and does not re
 Requirements:
 
 - GitHub CLI installed and authenticated with `gh auth login`
+- Optional: Jujutsu (`jj`) 0.32.0 or newer for local workspace detection. Colocated and non-colocated workspaces are supported. GitHub-only mode works without `jj`.
 
 Run it from anywhere:
 
@@ -206,7 +207,11 @@ directory.
 - `{{repoPath}}` — resolved local path (requires a matching `repoPaths` entry)
 
 If `editorCommand` is omitted, ghui falls back to `$VISUAL`/`$EDITOR` opening
-the resolved `repoPath`. Some common recipes:
+the resolved `repoPath`. `gh pr checkout` recipes are Git-specific. In a
+Jujutsu workspace, use **Open PR in JJ workspace** to create or open a sibling
+workspace without moving the current working-copy change.
+
+Some common recipes:
 
 ```jsonc
 // diffview.nvim: checkout the branch and diff against base

@@ -9,22 +9,13 @@ export const parseGitRemoteUrl = (url: string): string | null => {
 	return `${owner}/${repo}`
 }
 
-export const detectCurrentGitHubRepository = (): string | null => {
-	const remotes = Bun.spawnSync({ cmd: ["git", "remote"], stdout: "pipe", stderr: "pipe" })
-	if (remotes.exitCode !== 0) return null
-	const names = remotes.stdout
-		.toString()
-		.split("\n")
-		.map((name) => name.trim())
-		.filter(Boolean)
-	const orderedNames = [...names].sort((left, right) => (left === "origin" ? -1 : right === "origin" ? 1 : left === "upstream" ? -1 : right === "upstream" ? 1 : 0))
+export const orderGitRemoteNames = (names: readonly string[]): readonly string[] =>
+	[...names].sort((left, right) => (left === "origin" ? -1 : right === "origin" ? 1 : left === "upstream" ? -1 : right === "upstream" ? 1 : 0))
 
-	for (const name of orderedNames) {
-		const url = Bun.spawnSync({ cmd: ["git", "remote", "get-url", name], stdout: "pipe", stderr: "pipe" })
-		if (url.exitCode !== 0) continue
-		const repository = parseGitRemoteUrl(url.stdout.toString())
-		if (repository) return repository
+export const selectGithubRepository = (remotes: readonly { readonly name: string; readonly githubRepository: string | null }[]): string | null => {
+	for (const name of orderGitRemoteNames(remotes.map((remote) => remote.name))) {
+		const remote = remotes.find((candidate) => candidate.name === name)
+		if (remote?.githubRepository) return remote.githubRepository
 	}
-
 	return null
 }

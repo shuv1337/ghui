@@ -1,15 +1,17 @@
 import { Layer } from "effect"
 import * as Atom from "effect/unstable/reactivity/Atom"
 import { config } from "../config.js"
-import { detectCurrentGitHubRepository } from "../gitRemotes.js"
 import { Observability } from "../observability.js"
 import { parseRepositoryInput } from "../pullRequestViews.js"
+import { discoverRepositoryContext } from "./RepositoryContext.js"
 import { BrowserOpener } from "./BrowserOpener.js"
 import { CacheService } from "./CacheService.js"
 import { Clipboard } from "./Clipboard.js"
+import { ChangeWorkspace } from "./ChangeWorkspace.js"
 import { EditorOpener } from "./EditorOpener.js"
 import { CommandRunner } from "./CommandRunner.js"
 import { GitHubService } from "./GitHubService.js"
+import { isSupportedJjVersion } from "./RepositoryContext.js"
 
 const parseOptionalPositiveInt = (value: string | undefined, fallback: number | null) => {
 	if (value === undefined) return fallback
@@ -20,7 +22,11 @@ const parseOptionalPositiveInt = (value: string | undefined, fallback: number | 
 export const mockPrCount = parseOptionalPositiveInt(process.env.GHUI_MOCK_PR_COUNT, null)
 export const mockRepository = process.env.GHUI_MOCK_REPOSITORY?.trim() || null
 export const requestedRepository = parseRepositoryInput(process.env.GHUI_REPOSITORY ?? "")
-export const detectedRepository = mockPrCount === null ? (requestedRepository ?? detectCurrentGitHubRepository()) : mockRepository
+export const repositoryContext = discoverRepositoryContext({
+	mock: mockPrCount !== null,
+	explicitRepository: mockPrCount === null ? requestedRepository : null,
+})
+export const detectedRepository = mockPrCount === null ? repositoryContext.githubRepository : mockRepository
 export const mockUsername = process.env.GHUI_MOCK_USERNAME?.trim() || (mockPrCount !== null ? "kitlangton" : undefined)
 
 export const mockWorkspacePreferencesPath = (() => {
@@ -59,8 +65,20 @@ const cacheServiceLayer = mockPrCount !== null ? CacheService.disabledLayer : Ca
 
 const editorOpenerLayer = mockPrCount !== null ? EditorOpener.mockLayer : EditorOpener.layerNoDeps
 
+const changeWorkspaceLayer =
+	mockPrCount === null &&
+	repositoryContext.localKind === "jj" &&
+	repositoryContext.workspaceRoot &&
+	(repositoryContext.jjVersion === null || isSupportedJjVersion(repositoryContext.jjVersion))
+		? ChangeWorkspace.layer({
+				workspaceRoot: repositoryContext.workspaceRoot,
+				trunkRevision: repositoryContext.trunkRevision ?? "trunk()",
+				storeRoot: repositoryContext.storeRoot,
+			})
+		: ChangeWorkspace.disabledLayer
+
 export const githubRuntime = Atom.runtime(
-	Layer.mergeAll(githubServiceLayer, cacheServiceLayer, Clipboard.layerNoDeps, BrowserOpener.layerNoDeps, editorOpenerLayer).pipe(
+	Layer.mergeAll(githubServiceLayer, cacheServiceLayer, Clipboard.layerNoDeps, BrowserOpener.layerNoDeps, editorOpenerLayer, changeWorkspaceLayer).pipe(
 		Layer.provide(CommandRunner.layer),
 		Layer.provideMerge(Observability.layer),
 	),

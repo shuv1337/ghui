@@ -53,6 +53,7 @@ export interface ModalLayouts {
 	readonly DeleteRelease: ModalRect
 	readonly ResourceEditor: ModalRect
 	readonly DeleteResource: ModalRect
+	readonly ChangePlan: ModalRect
 }
 
 export const computeModalLayouts = ({ contentWidth, terminalHeight, longestLabelName, longestDiffFileName, changedFilesModalActive }: ModalLayoutInput): ModalLayouts => {
@@ -98,5 +99,6 @@ export const computeModalLayouts = ({ contentWidth, terminalHeight, longestLabel
 		DeleteRelease: sized(46, 68, 12, 12),
 		ResourceEditor: sized(54, 82, 8, 15),
 		DeleteResource: sized(46, 68, 12, 12),
+		ChangePlan: sized(52, 78, 10, 14),
 	}
 }

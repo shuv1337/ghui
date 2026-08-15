@@ -7,6 +7,7 @@ import type { CommandScope } from "../commands.js"
 import type { BrowserOpener } from "../services/BrowserOpener.js"
 import type { CacheService } from "../services/CacheService.js"
 import type { Clipboard } from "../services/Clipboard.js"
+import type { ChangeWorkspace } from "../services/ChangeWorkspace.js"
 import type { EditorOpener } from "../services/EditorOpener.js"
 import type { GitHubService } from "../services/GitHubService.js"
 
@@ -41,7 +42,7 @@ export interface CommandDefinition {
 // The services a command body may yield. Mirrors the layer set provided by
 // `githubRuntime` so commands can require GitHub, cache, clipboard, browser,
 // the atom registry, or none of the above.
-export type CommandRequirements = AtomRegistry | Reactivity | Scope | BrowserOpener | CacheService | Clipboard | EditorOpener | GitHubService
+export type CommandRequirements = AtomRegistry | Reactivity | Scope | BrowserOpener | CacheService | ChangeWorkspace | Clipboard | EditorOpener | GitHubService
 
 export type CommandEffect = Effect.Effect<void, unknown, CommandRequirements>
 

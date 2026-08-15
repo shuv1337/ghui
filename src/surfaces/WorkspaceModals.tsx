@@ -20,6 +20,7 @@ import {
 	DeleteReleaseModal,
 	ResourceEditorModal,
 	DeleteResourceModal,
+	ChangePlanModal,
 	SubmitReviewModal,
 	PendingReviewModal,
 	RunActionModal,
@@ -120,6 +121,7 @@ export const WorkspaceModals = (props: WorkspaceModalsProps) =>
 			<ResourceEditorModal state={state as unknown as ResourceEditorModalState} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.ResourceEditor)} />
 		),
 		DeleteResource: (state) => <DeleteResourceModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.DeleteResource)} />,
+		ChangePlan: (state) => <ChangePlanModal state={state} loadingIndicator={props.loadingIndicator} {...layoutToProps(props.layouts.ChangePlan)} />,
 		CommandPalette: (state) => (
 			<CommandPalette
 				commands={props.commandPaletteCommands}

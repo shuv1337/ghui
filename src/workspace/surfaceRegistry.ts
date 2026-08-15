@@ -3,6 +3,7 @@ export type WorkspaceScopeKind = "user" | "repository"
 export type WorkspaceSurfaceBadgeSource =
 	| "repositories"
 	| "pullRequests"
+	| "changes"
 	| "issues"
 	| "releases"
 	| "actions"
@@ -11,7 +12,18 @@ export type WorkspaceSurfaceBadgeSource =
 	| "environments"
 	| "runners"
 	| "notifications"
-export type WorkspaceSurfaceLoadingSource = "pullRequests" | "issues" | "releases" | "actions" | "branches" | "milestones" | "environments" | "runners" | "notifications" | null
+export type WorkspaceSurfaceLoadingSource =
+	| "pullRequests"
+	| "changes"
+	| "issues"
+	| "releases"
+	| "actions"
+	| "branches"
+	| "milestones"
+	| "environments"
+	| "runners"
+	| "notifications"
+	| null
 export type WorkspaceSurfaceFullscreenMode = "none" | "details" | "pullRequest"
 
 export interface WorkspaceSurfaceDescriptor<Id extends string = string> {
@@ -53,6 +65,16 @@ export const workspaceSurfaceRegistry = [
 		refreshCommandId: "pull.refresh",
 		filterable: true,
 		fullscreen: "pullRequest",
+	},
+	{
+		id: "changes",
+		label: "CHANGES",
+		scopes: ["repository"],
+		badgeSource: "changes",
+		loadingSource: "changes",
+		refreshCommandId: "change.refresh",
+		filterable: false,
+		fullscreen: "none",
 	},
 	{
 		id: "issues",

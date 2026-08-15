@@ -91,6 +91,20 @@ describe("CLI parser and command routing", () => {
 		expect(await runCli(["open", "unknown", "1"], deps)).toMatchObject({ exitCode: 2 })
 	})
 
+	test("passes explicit --repo into doctor so CLI, TUI, and open share one scope", async () => {
+		let seen: string | null | undefined
+		await runCli(
+			["--repo", "octo/example", "doctor"],
+			dependencies({
+				doctor: async (repository) => {
+					seen = repository
+					return [{ id: "gh", status: "pass", summary: "ok" }]
+				},
+			}),
+		)
+		expect(seen).toBe("octo/example")
+	})
+
 	test("lists repositories as human-readable text or stable JSON", async () => {
 		const repositories: readonly RepositorySummary[] = [{ nameWithOwner: "octo/example", pushedAt: null, isPrivate: false }]
 		const deps = dependencies({ listRepositories: async () => repositories })

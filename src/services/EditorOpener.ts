@@ -41,11 +41,25 @@ export class EditorOpener extends Context.Service<
 	EditorOpener,
 	{
 		readonly openPullRequest: (pullRequest: PullRequestItem) => Effect.Effect<void, CommandError>
+		readonly openPath: (path: string) => Effect.Effect<void, CommandError>
 	}
 >()("ghui/EditorOpener") {
 	static readonly layerNoDeps = Layer.effect(
 		EditorOpener,
 		Effect.gen(function* () {
+			const openPath = Effect.fn("EditorOpener.openPath")(function* (path: string) {
+				const { editorCommand } = yield* loadStoredEditorConfig
+				const editor = editorCommand ?? (process.env.VISUAL || process.env.EDITOR || "").trim()
+				if (!editor) return yield* editorError("Set $EDITOR, or add editorCommand to config.json")
+				const command = editor.includes("{{")
+					? renderEditorCommand(editor, { repository: "", number: 0, headRef: "", baseRef: "", author: "", url: "" }, path)
+					: `${editor} ${path}`
+				yield* Effect.tryPromise({
+					try: () => withTuiSuspended(() => runInShell(command)),
+					catch: (cause) => editorError(cause instanceof Error ? cause.message : "Failed to launch editor", cause),
+				})
+			})
+
 			const openPullRequest = Effect.fn("EditorOpener.openPullRequest")(function* (pullRequest: PullRequestItem) {
 				const { editorCommand, repoPaths } = yield* loadStoredEditorConfig
 				const repoPath = resolveRepoPath(repoPaths, pullRequest.repository)
@@ -67,7 +81,7 @@ export class EditorOpener extends Context.Service<
 				})
 			})
 
-			return EditorOpener.of({ openPullRequest })
+			return EditorOpener.of({ openPullRequest, openPath })
 		}),
 	)
 
@@ -78,6 +92,7 @@ export class EditorOpener extends Context.Service<
 		EditorOpener,
 		EditorOpener.of({
 			openPullRequest: () => Effect.void,
+			openPath: () => Effect.void,
 		}),
 	)
 }

@@ -48,6 +48,7 @@ export interface WorkspaceDerivationsInput {
 	readonly repositoryItems: readonly RepositoryListItem[]
 	readonly releaseCount: number
 	readonly actionRunCount: number
+	readonly changeCount: number
 	readonly branchCount: number
 	readonly milestoneCount: number
 	readonly environmentCount: number
@@ -113,6 +114,7 @@ export interface WorkspaceDerivations {
 	readonly workspaceTabCounts: {
 		readonly repos: number
 		readonly pullRequests: number | string
+		readonly changes?: number
 		readonly issues: number | string
 		readonly releases: number
 		readonly actions: number
@@ -168,6 +170,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 		repositoryItems,
 		releaseCount,
 		actionRunCount,
+		changeCount,
 		branchCount,
 		milestoneCount,
 		environmentCount,
@@ -289,6 +292,7 @@ export const computeWorkspaceDerivations = (input: WorkspaceDerivationsInput): W
 	const workspaceTabCounts = {
 		repos: repositoryItems.length,
 		pullRequests: hasMorePullRequests ? `${visiblePullRequests.length}+` : visiblePullRequests.length,
+		changes: changeCount,
 		issues: hasMoreIssues ? `${issues.length}+` : issues.length,
 		releases: releaseCount,
 		actions: actionRunCount,

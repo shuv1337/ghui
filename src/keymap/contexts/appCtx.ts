@@ -16,6 +16,7 @@ import { buildSubmitReviewModalCtx, type BuildSubmitReviewModalCtxInput } from "
 import { buildPendingReviewModalCtx, type BuildPendingReviewModalCtxInput } from "./pendingReviewModalCtx.ts"
 import { buildThemeModalCtx, type BuildThemeModalCtxInput } from "./themeModalCtx.ts"
 import type { DeleteReleaseModalCtx } from "../deleteReleaseModal.ts"
+import type { ChangePlanModalCtx } from "../changePlanModal.ts"
 import type { ReleaseEditorModalCtx } from "../releaseEditorModal.ts"
 import type { ItemEditorModalCtx } from "../itemEditorModal.ts"
 import type { MetadataSelectorModalCtx } from "../metadataSelectorModal.ts"
@@ -73,6 +74,7 @@ export interface BuildAppCtxFlags {
 	readonly commandPaletteActive: boolean
 	readonly releaseEditorModalActive: boolean
 	readonly deleteReleaseModalActive: boolean
+	readonly changePlanModalActive: boolean
 	readonly actionsModalActive: boolean
 	readonly filterMode: boolean
 	readonly diffFullView: boolean
@@ -103,6 +105,7 @@ export interface BuildAppCtxInput {
 	readonly commandPalette: BuildCommandPaletteCtxInput
 	readonly releaseEditorModal: ReleaseEditorModalCtx
 	readonly deleteReleaseModal: DeleteReleaseModalCtx
+	readonly changePlanModal: ChangePlanModalCtx
 	readonly actionsModal: ActionsModalCtx
 	readonly filterModeCtx: BuildFilterModeCtxInput
 	readonly diff: BuildDiffViewCtxInput
@@ -143,6 +146,7 @@ export const buildAppCtx = (input: BuildAppCtxInput): AppCtx => ({
 	commandPalette: buildCommandPaletteCtx(input.commandPalette),
 	releaseEditorModal: input.releaseEditorModal,
 	deleteReleaseModal: input.deleteReleaseModal,
+	changePlanModal: input.changePlanModal,
 	actionsModal: input.actionsModal,
 	filterModeCtx: buildFilterModeCtx(input.filterModeCtx),
 	diff: buildDiffViewCtx(input.diff),

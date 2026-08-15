@@ -5,7 +5,7 @@ import { repositoryWorkspaceSurfaces, userWorkspaceSurfaces, workspaceSurfaceDes
 describe("workspace Surface registry", () => {
 	test("is the only source for user and repository navigation", () => {
 		expect(userWorkspaceSurfaces).toEqual(["repos", "pullRequests", "issues", "notifications"])
-		expect(repositoryWorkspaceSurfaces).toEqual(["pullRequests", "issues", "releases", "actions", "branches", "milestones", "environments", "runners"])
+		expect(repositoryWorkspaceSurfaces).toEqual(["pullRequests", "changes", "issues", "releases", "actions", "branches", "milestones", "environments", "runners"])
 		expect(workspaceSurfacesForScope("user")).toEqual(userWorkspaceSurfaces)
 		expect(workspaceSurfacesForScope("repository")).toEqual(repositoryWorkspaceSurfaces)
 	})
@@ -14,6 +14,7 @@ describe("workspace Surface registry", () => {
 		expect(workspaceSurfaceRegistry.map((descriptor) => descriptor.id)).toEqual([
 			"repos",
 			"pullRequests",
+			"changes",
 			"issues",
 			"releases",
 			"actions",
